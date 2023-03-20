@@ -92,20 +92,20 @@ class LatentSDE(torchsde.SDEIto):
         logvar = math.log(sigma ** 2 / (2. * theta))
 
         # Prior drift.
-        self.register_buffer("theta_g", torch.asarray(torch.zeros(1,state_vector_dim, dtype=torch.float).fill_(theta)))
-        self.register_buffer("mu_g", torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(mu))
-        self.register_buffer("sigma_g", torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(sigma))
+        self.register_buffer("theta", torch.asarray(torch.zeros(1,state_vector_dim, dtype=torch.float).fill_(theta)))
+        self.register_buffer("mu", torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(mu))
+        self.register_buffer("sigma", torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(sigma))
 
-        self.register_buffer("theta", torch.tensor([[theta]]))
-        self.register_buffer("mu", torch.tensor([[mu]]))
-        self.register_buffer("sigma", torch.tensor([[sigma]]))
+        # self.register_buffer("theta", torch.tensor([[theta]]))
+        # self.register_buffer("mu", torch.tensor([[mu]]))
+        # self.register_buffer("sigma", torch.tensor([[sigma]]))
 
         # p(y0).
-        self.register_buffer("py0_mean_g", torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(mu))
-        self.register_buffer("py0_logvar_g", torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(logvar))
+        self.register_buffer("py0_mean", torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(mu))
+        self.register_buffer("py0_logvar", torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(logvar))
 
-        self.register_buffer("py0_mean", torch.tensor([[mu]]))
-        self.register_buffer("py0_logvar", torch.tensor([[logvar]]))
+        # self.register_buffer("py0_mean", torch.tensor([[mu]]))
+        # self.register_buffer("py0_logvar", torch.tensor([[logvar]]))
 
         # Approximate posterior drift: Takes in 2 positional encodings and the state.
         self.net = nn.Sequential(
@@ -120,8 +120,11 @@ class LatentSDE(torchsde.SDEIto):
         self.net[-1].bias.data.fill_(0.)
 
         # q(y0).
-        self.qy0_mean = nn.Parameter(torch.tensor([[mu]]), requires_grad=True)
-        self.qy0_logvar = nn.Parameter(torch.tensor([[logvar]]), requires_grad=True)
+        self.qy0_mean = nn.Parameter(torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(mu), requires_grad=True)
+        self.qy0_logvar = nn.Parameter(torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(logvar),
+                                       requires_grad=True)
+        # self.qy0_mean = nn.Parameter(torch.tensor([[mu]]), requires_grad=True)
+        # self.qy0_logvar = nn.Parameter(torch.tensor([[logvar]]), requires_grad=True)
 
     def f(self, t, y):  # Approximate posterior drift.
         if t.dim() == 0:
@@ -228,7 +231,9 @@ def main():
     # Dataset.
     ts_, ts_ext_, ts_vis_, ts, ts_ext, ts_vis, ys, ys_ = make_data()
     batch_size = 1
-    state_buffer = get_env_samples('Pendulum-v1', 'sac_pendulum', batch_size, 1000, device)
+    path_rollout_size = 200
+    state_buffer = get_env_samples('Pendulum-v1', 'sac_pendulum', batch_size, path_rollout_size, device)
+    path_rollout_steps = list(range(path_rollout_size))
 
     # Plotting parameters.
     vis_batch_size = 1024
@@ -250,9 +255,9 @@ def main():
 
     eps = torch.randn(vis_batch_size, 1).to(device)  # Fix seed for the random draws used in the plots.
     bm = torchsde.BrownianInterval(
-        t0=ts_vis[0],
-        t1=ts_vis[-1],
-        size=(vis_batch_size, 1),
+        t0=path_rollout_steps[0],
+        t1=path_rollout_steps[-1],
+        size=(vis_batch_size, state_buffer.shape[-1]),
         device=device,
         levy_area_approximation='space-time'
     )  # We need space-time Levy area to use the SRK solver
@@ -269,7 +274,7 @@ def main():
 
     if args.show_prior:
         with torch.no_grad():
-            zs = model.sample_p(ts=ts_vis, batch_size=vis_batch_size, eps=eps, bm=bm).squeeze()
+            zs = model.sample_p(ts=path_rollout_steps, batch_size=vis_batch_size, eps=eps, bm=bm).squeeze()
             ts_vis_, zs_ = ts_vis.cpu().numpy(), zs.cpu().numpy()
             zs_ = np.sort(zs_, axis=1)
 
