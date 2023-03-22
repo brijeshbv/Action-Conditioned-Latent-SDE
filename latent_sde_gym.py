@@ -90,7 +90,7 @@ class LatentSDE(torchsde.SDEIto):
     def __init__(self, theta=1.0, mu=0.0, sigma=0.5, state_vector_dim=1):
         super(LatentSDE, self).__init__(noise_type="diagonal")
         logvar = math.log(sigma ** 2 / (2. * theta))
-
+        self.state_vector_dim = state_vector_dim
         # Prior drift.
         self.register_buffer("theta", torch.asarray(torch.zeros(1,state_vector_dim, dtype=torch.float).fill_(theta)))
         self.register_buffer("mu", torch.zeros(1, state_vector_dim, dtype=torch.float).fill_(mu))
@@ -109,11 +109,11 @@ class LatentSDE(torchsde.SDEIto):
 
         # Approximate posterior drift: Takes in 2 positional encodings and the state.
         self.net = nn.Sequential(
-            nn.Linear(3, 200),
+            nn.Linear(3 * state_vector_dim, 200),
             nn.Tanh(),
             nn.Linear(200, 200),
             nn.Tanh(),
-            nn.Linear(200, 1)
+            nn.Linear(200, state_vector_dim)
         )
         # Initialization trick from Glow.
         self.net[-1].weight.data.fill_(0.)
@@ -139,14 +139,14 @@ class LatentSDE(torchsde.SDEIto):
         return self.theta * (self.mu - y)
 
     def f_aug(self, t, y):  # Drift for augmented dynamics with logqp term.
-        y = y[:, 0:1]
+        y = y[:, 0:self.state_vector_dim]
         f, g, h = self.f(t, y), self.g(t, y), self.h(t, y)
         u = _stable_division(f - h, g)
-        f_logqp = .5 * (u ** 2).sum(dim=1, keepdim=True)
+        f_logqp = .5 * (u ** 2)
         return torch.cat([f, f_logqp], dim=1)
 
     def g_aug(self, t, y):  # Diffusion for augmented dynamics with logqp term.
-        y = y[:, 0:1]
+        y = y[:, 0:self.state_vector_dim]
         g = self.g(t, y)
         g_logqp = torch.zeros_like(y)
         return torch.cat([g, g_logqp], dim=1)
@@ -158,7 +158,7 @@ class LatentSDE(torchsde.SDEIto):
         py0 = distributions.Normal(loc=self.py0_mean, scale=self.py0_std)
         logqp0 = distributions.kl_divergence(qy0, py0).sum(dim=1)  # KL(t=0).
 
-        aug_y0 = torch.cat([y0, torch.zeros(batch_size, 1).to(y0)], dim=1)
+        aug_y0 = torch.cat([y0, torch.zeros(batch_size, self.state_vector_dim).to(y0)], dim=1)
         aug_ys = sdeint_fn(
             sde=self,
             y0=aug_y0,
@@ -170,7 +170,7 @@ class LatentSDE(torchsde.SDEIto):
             atol=args.atol,
             names={'drift': 'f_aug', 'diffusion': 'g_aug'}
         )
-        ys, logqp_path = aug_ys[:, :, 0:1], aug_ys[-1, :, 1]
+        ys, logqp_path = aug_ys[:, :, 0:self.state_vector_dim], aug_ys[-1, :, 1]
         logqp = (logqp0 + logqp_path).mean(dim=0)  # KL(t=0) + KL(path).
         return ys, logqp
 
@@ -229,10 +229,11 @@ def make_data():
 
 def main():
     # Dataset.
-    ts_, ts_ext_, ts_vis_, ts, ts_ext, ts_vis, ys, ys_ = make_data()
+    # ts_, ts_ext_, ts_vis_, ts, ts_ext, ts_vis, ys, ys_ = make_data()
     batch_size = 1
     path_rollout_size = 200
     state_buffer = get_env_samples('Pendulum-v1', 'sac_pendulum', batch_size, path_rollout_size, device)
+    state_buffer = state_buffer.squeeze()
     path_rollout_steps = list(range(path_rollout_size))
 
     # Plotting parameters.
@@ -272,29 +273,29 @@ def main():
     kl_metric = EMAMetric()
     loss_metric = EMAMetric()
 
-    if args.show_prior:
-        with torch.no_grad():
-            zs = model.sample_p(ts=path_rollout_steps, batch_size=vis_batch_size, eps=eps, bm=bm).squeeze()
-            ts_vis_, zs_ = ts_vis.cpu().numpy(), zs.cpu().numpy()
-            zs_ = np.sort(zs_, axis=1)
-
-            img_dir = os.path.join(args.train_dir, 'prior.png')
-            plt.subplot(frameon=False)
-            for alpha, percentile in zip(alphas, percentiles):
-                idx = int((1 - percentile) / 2. * vis_batch_size)
-                zs_bot_ = zs_[:, idx]
-                zs_top_ = zs_[:, -idx]
-                plt.fill_between(ts_vis_, zs_bot_, zs_top_, alpha=alpha, color=fill_color)
-
-            # `zorder` determines who's on top; the larger the more at the top.
-            plt.scatter(ts_, ys_, marker='x', zorder=3, color='k', s=35)  # Data.
-            plt.ylim(ylims)
-            plt.xlabel('$t$')
-            plt.ylabel('$Y_t$')
-            plt.tight_layout()
-            plt.savefig(img_dir, dpi=args.dpi)
-            plt.close()
-            logging.info(f'Saved prior figure at: {img_dir}')
+    # if args.show_prior:
+    #     with torch.no_grad():
+    #         zs = model.sample_p(ts=path_rollout_steps, batch_size=vis_batch_size, eps=eps, bm=bm).squeeze()
+    #         ts_vis_, zs_ = ts_vis.cpu().numpy(), zs.cpu().numpy()
+    #         zs_ = np.sort(zs_, axis=1)
+    #
+    #         img_dir = os.path.join(args.train_dir, 'prior.png')
+    #         plt.subplot(frameon=False)
+    #         for alpha, percentile in zip(alphas, percentiles):
+    #             idx = int((1 - percentile) / 2. * vis_batch_size)
+    #             zs_bot_ = zs_[:, idx]
+    #             zs_top_ = zs_[:, -idx]
+    #             plt.fill_between(ts_vis_, zs_bot_, zs_top_, alpha=alpha, color=fill_color)
+    #
+    #         # `zorder` determines who's on top; the larger the more at the top.
+    #         plt.scatter(ts_, ys_, marker='x', zorder=3, color='k', s=35)  # Data.
+    #         plt.ylim(ylims)
+    #         plt.xlabel('$t$')
+    #         plt.ylabel('$Y_t$')
+    #         plt.tight_layout()
+    #         plt.savefig(img_dir, dpi=args.dpi)
+    #         plt.close()
+    #         logging.info(f'Saved prior figure at: {img_dir}')
 
     for global_step in tqdm.tqdm(range(args.train_iters)):
         # Plot and save.
@@ -302,48 +303,49 @@ def main():
             img_path = os.path.join(args.train_dir, f'global_step_{global_step}.png')
 
             with torch.no_grad():
-                zs = model.sample_q(ts=ts_vis, batch_size=vis_batch_size, eps=eps, bm=bm).squeeze()
+                zs = model.sample_q(ts=path_rollout_steps, batch_size=vis_batch_size, eps=eps, bm=bm).squeeze()
                 samples = zs[:, vis_idx]
-                ts_vis_, zs_, samples_ = ts_vis.cpu().numpy(), zs.cpu().numpy(), samples.cpu().numpy()
+                #ts_vis_ = ts_vis.cpu().numpy(),
+                zs_, samples_ = zs.cpu().numpy(), samples.cpu().numpy()
                 zs_ = np.sort(zs_, axis=1)
                 plt.subplot(frameon=False)
 
-                if args.show_percentiles:
-                    for alpha, percentile in zip(alphas, percentiles):
-                        idx = int((1 - percentile) / 2. * vis_batch_size)
-                        zs_bot_, zs_top_ = zs_[:, idx], zs_[:, -idx]
-                        plt.fill_between(ts_vis_, zs_bot_, zs_top_, alpha=alpha, color=fill_color)
+                # if args.show_percentiles:
+                #     for alpha, percentile in zip(alphas, percentiles):
+                #         idx = int((1 - percentile) / 2. * vis_batch_size)
+                #         zs_bot_, zs_top_ = zs_[:, idx], zs_[:, -idx]
+                #         plt.fill_between(ts_vis_, zs_bot_, zs_top_, alpha=alpha, color=fill_color)
+                #
+                # if args.show_mean:
+                #     plt.plot(ts_vis_, zs_.mean(axis=1), color=mean_color)
+                #
+                # if args.show_samples:
+                #     for j in range(num_samples):
+                #         plt.plot(ts_vis_, samples_[:, j], color=sample_colors[j], linewidth=1.0)
 
-                if args.show_mean:
-                    plt.plot(ts_vis_, zs_.mean(axis=1), color=mean_color)
+                # if args.show_arrows:
+                #     num, dt = 12, 0.12
+                #     t, y = torch.meshgrid(
+                #         [torch.linspace(0.2, 1.8, num).to(device), torch.linspace(-1.5, 1.5, num).to(device)]
+                #     )
+                #     t, y = t.reshape(-1, 1), y.reshape(-1, 1)
+                #     fty = model.f(t=t, y=y).reshape(num, num)
+                #     dt = torch.zeros(num, num).fill_(dt).to(device)
+                #     dy = fty * dt
+                #     dt_, dy_, t_, y_ = dt.cpu().numpy(), dy.cpu().numpy(), t.cpu().numpy(), y.cpu().numpy()
+                #     plt.quiver(t_, y_, dt_, dy_, alpha=0.3, edgecolors='k', width=0.0035, scale=50)
+                #
+                # if args.hide_ticks:
+                #     plt.xticks([], [])
+                #     plt.yticks([], [])
 
-                if args.show_samples:
-                    for j in range(num_samples):
-                        plt.plot(ts_vis_, samples_[:, j], color=sample_colors[j], linewidth=1.0)
-
-                if args.show_arrows:
-                    num, dt = 12, 0.12
-                    t, y = torch.meshgrid(
-                        [torch.linspace(0.2, 1.8, num).to(device), torch.linspace(-1.5, 1.5, num).to(device)]
-                    )
-                    t, y = t.reshape(-1, 1), y.reshape(-1, 1)
-                    fty = model.f(t=t, y=y).reshape(num, num)
-                    dt = torch.zeros(num, num).fill_(dt).to(device)
-                    dy = fty * dt
-                    dt_, dy_, t_, y_ = dt.cpu().numpy(), dy.cpu().numpy(), t.cpu().numpy(), y.cpu().numpy()
-                    plt.quiver(t_, y_, dt_, dy_, alpha=0.3, edgecolors='k', width=0.0035, scale=50)
-
-                if args.hide_ticks:
-                    plt.xticks([], [])
-                    plt.yticks([], [])
-
-                plt.scatter(ts_, ys_, marker='x', zorder=3, color='k', s=35)  # Data.
-                plt.ylim(ylims)
-                plt.xlabel('$t$')
-                plt.ylabel('$Y_t$')
-                plt.tight_layout()
-                plt.savefig(img_path, dpi=args.dpi)
-                plt.close()
+                # plt.scatter(ts_, ys_, marker='x', zorder=3, color='k', s=35)  # Data.
+                # plt.ylim(ylims)
+                # plt.xlabel('$t$')
+                # plt.ylabel('$Y_t$')
+                # plt.tight_layout()
+                # plt.savefig(img_path, dpi=args.dpi)
+                # plt.close()
                 logging.info(f'Saved figure at: {img_path}')
 
                 if args.save_ckpt:
@@ -357,13 +359,15 @@ def main():
 
         # Train.
         optimizer.zero_grad()
-        zs, kl = model(ts=ts_ext, batch_size=args.batch_size)
+        zs, kl = model(ts=path_rollout_steps, batch_size=args.batch_size)
         zs = zs.squeeze()
-        zs = zs[1:-1]  # Drop first and last which are only used to penalize out-of-data region and spread uncertainty.
+        a, b = state_buffer.shape
+        state_buffer_ = state_buffer.reshape((a, 1, b))
+        #zs = zs[1:-1]  # Drop first and last which are only used to penalize out-of-data region and spread uncertainty.
 
         likelihood_constructor = {"laplace": distributions.Laplace, "normal": distributions.Normal}[args.likelihood]
         likelihood = likelihood_constructor(loc=zs, scale=args.scale)
-        logpy = likelihood.log_prob(ys).sum(dim=0).mean(dim=0)
+        logpy = likelihood.log_prob(state_buffer_).sum(dim=(0, 2)).mean(dim=0)
 
         loss = -logpy + kl * kl_scheduler.val
         loss.backward()
@@ -407,7 +411,7 @@ if __name__ == '__main__':
     parser.add_argument('--adaptive', type=str2bool, default=False, const=True, nargs="?")
     parser.add_argument('--method', type=str, default='euler', choices=('euler', 'milstein', 'srk'),
                         help='Name of numerical solver.')
-    parser.add_argument('--dt', type=float, default=1e-2)
+    parser.add_argument('--dt', type=float, default=1e-1) #todo figure this value out
     parser.add_argument('--rtol', type=float, default=1e-3)
     parser.add_argument('--atol', type=float, default=1e-3)
 
