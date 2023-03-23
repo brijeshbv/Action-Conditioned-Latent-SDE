@@ -35,7 +35,7 @@ import tqdm
 from torch import nn
 from torch import optim
 from torch.distributions import Normal
-
+from gym_sampler import get_env_samples
 import torchsde
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -274,7 +274,7 @@ def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
 
 
 def main(
-        batch_size=1024,
+        batch_size=128,
         latent_size=4,
         context_size=64,
         hidden_size=128,
@@ -291,8 +291,9 @@ def main(
         method="euler",
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    xs, ts = make_dataset(t0=t0, t1=t1, batch_size=batch_size, noise_std=noise_std, train_dir=train_dir, device=device)
+    steps = 100
+    xs, ts = get_env_samples('Pendulum-v1', 'sac_pendulum', batch_size, steps, device)
+    #xs, ts = make_dataset(t0=t0, t1=t1, batch_size=batch_size, noise_std=noise_std, train_dir=train_dir, device=device)
     latent_sde = LatentSDE(
         data_size=3,
         latent_size=latent_size,
