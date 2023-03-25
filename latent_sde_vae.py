@@ -275,6 +275,14 @@ def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
     plt.close()
 
 
+def log_MSE(xs, ts, latent_sde, bm_vis, global_step):
+    xs_model = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
+    mse_loss = nn.MSELoss()
+    with torch.no_grad():
+        loss = mse_loss(xs, xs_model)
+    logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},')
+
+
 def main(
         batch_size=128,
         latent_size=4,
@@ -310,7 +318,6 @@ def main(
     # Fix the same Brownian motion for visualization.
     bm_vis = torchsde.BrownianInterval(
         t0=t0, t1=t1, size=(batch_size, latent_size,), device=device, levy_area_approximation="space-time")
-    vis(xs, ts, latent_sde, bm_vis, "something.pdf")
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
         latent_sde.zero_grad()
         log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method)
@@ -322,12 +329,11 @@ def main(
 
         if global_step % pause_every == 0:
             lr_now = optimizer.param_groups[0]['lr']
-            logging.warning(
+            logging.info(
                 f'global_step: {global_step:06d}, lr: {lr_now:.5f}, '
                 f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f}'
             )
-            img_path = os.path.join(train_dir, f'global_step_{global_step:06d}.pdf')
-            vis(xs, ts, latent_sde, bm_vis, img_path)
+            log_MSE(xs,ts,latent_sde,bm_vis, global_step)
 
 
 if __name__ == "__main__":
