@@ -40,6 +40,7 @@ import torchsde
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
+logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
 
 class LinearScheduler(object):
     def __init__(self, iters, maxval=1.0):
@@ -277,9 +278,10 @@ def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
 
 def log_MSE(xs, ts, latent_sde, bm_vis, global_step):
     xs_model = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
+    print(xs_model.shape, xs.cpu().numpy().shape)
     mse_loss = nn.MSELoss()
     with torch.no_grad():
-        loss = mse_loss(xs, xs_model)
+        loss = mse_loss(xs, torch.tensor(xs_model))
     logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},')
 
 
@@ -318,6 +320,8 @@ def main(
     # Fix the same Brownian motion for visualization.
     bm_vis = torchsde.BrownianInterval(
         t0=t0, t1=t1, size=(batch_size, latent_size,), device=device, levy_area_approximation="space-time")
+    log_MSE(xs, ts, latent_sde, bm_vis, 10)
+
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
         latent_sde.zero_grad()
         log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method)
