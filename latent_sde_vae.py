@@ -111,7 +111,7 @@ class Encoder(nn.Module):
 
 
 class LatentSDE(nn.Module):
-    sde_type = "ito"
+    sde_type = "stratonovich"
     noise_type = "diagonal"
 
     def __init__(self, data_size, latent_size, context_size, hidden_size):
@@ -170,7 +170,7 @@ class LatentSDE(nn.Module):
         out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
         return torch.cat(out, dim=1)
 
-    def forward(self, xs, ts, noise_std, adjoint=False, method="euler"):
+    def forward(self, xs, ts, noise_std, adjoint=False, method="adjoint_reversible_heun"):
         # Contextualization is only needed for posterior inference.
         ctx = self.encoder(torch.flip(xs, dims=(0,)))
         ctx = torch.flip(ctx, dims=(0,))
@@ -286,9 +286,9 @@ def main(
         kl_anneal_iters=1000,
         pause_every=50,
         noise_std=0.01,
-        adjoint=False,
+        adjoint=True,
         train_dir='./dump/lorenz/',
-        method="euler",
+        method="reversible_heun",
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     steps = 100
