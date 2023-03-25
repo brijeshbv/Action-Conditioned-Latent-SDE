@@ -111,7 +111,7 @@ class Encoder(nn.Module):
 
 
 class LatentSDE(nn.Module):
-    sde_type = "stratonovich"
+    sde_type = "ito"
     noise_type = "diagonal"
 
     def __init__(self, data_size, latent_size, context_size, hidden_size):
@@ -170,7 +170,7 @@ class LatentSDE(nn.Module):
         out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
         return torch.cat(out, dim=1)
 
-    def forward(self, xs, ts, noise_std, adjoint=False, method="adjoint_reversible_heun"):
+    def forward(self, xs, ts, noise_std, adjoint=False, method="euler_heun"):
         # Contextualization is only needed for posterior inference.
         ctx = self.encoder(torch.flip(xs, dims=(0,)))
         ctx = torch.flip(ctx, dims=(0,))
@@ -236,7 +236,8 @@ def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
     gs = gridspec.GridSpec(1, 2)
     ax00 = fig.add_subplot(gs[0, 0], projection='3d')
     ax01 = fig.add_subplot(gs[0, 1], projection='3d')
-
+    xs = torch.hstack((xs[:,:,0],xs[:,:,8],xs[:,:,9]))
+    print(xs.shape)
     # Left plot: data.
     z1, z2, z3 = np.split(xs.cpu().numpy(), indices_or_sections=3, axis=-1)
     [ax00.plot(z1[:, i, 0], z2[:, i, 0], z3[:, i, 0]) for i in range(num_samples)]
@@ -254,6 +255,7 @@ def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
 
     # Right plot: samples from learned model.
     xs = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
+    xs = torch.vstack((xs[0], xs[8], xs[9]))
     z1, z2, z3 = np.split(xs, indices_or_sections=3, axis=-1)
 
     [ax01.plot(z1[:, i, 0], z2[:, i, 0], z3[:, i, 0]) for i in range(num_samples)]
@@ -286,16 +288,17 @@ def main(
         kl_anneal_iters=1000,
         pause_every=50,
         noise_std=0.01,
-        adjoint=True,
+        adjoint=False,
         train_dir='./dump/lorenz/',
-        method="reversible_heun",
+        method="srk",
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     steps = 100
-    xs, ts = get_env_samples('Pendulum-v1', 'sac_pendulum', batch_size, steps, device)
+    xs, ts = get_env_samples('HalfCheetah-v2', 'sac_HalfCheetah', batch_size, steps, device)
     #xs, ts = make_dataset(t0=t0, t1=t1, batch_size=batch_size, noise_std=noise_std, train_dir=train_dir, device=device)
+    print("state space", xs.shape[-1])
     latent_sde = LatentSDE(
-        data_size=3,
+        data_size=xs.shape[-1],
         latent_size=latent_size,
         context_size=context_size,
         hidden_size=hidden_size,
@@ -307,7 +310,7 @@ def main(
     # Fix the same Brownian motion for visualization.
     bm_vis = torchsde.BrownianInterval(
         t0=t0, t1=t1, size=(batch_size, latent_size,), device=device, levy_area_approximation="space-time")
-
+    vis(xs, ts, latent_sde, bm_vis, "something.pdf")
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
         latent_sde.zero_grad()
         log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method)
