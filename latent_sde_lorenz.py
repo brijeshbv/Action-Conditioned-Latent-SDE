@@ -38,6 +38,7 @@ from torch.distributions import Normal
 
 import torchsde
 
+logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 
@@ -271,6 +272,13 @@ def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
 
     plt.savefig(img_path)
     plt.close()
+def log_MSE(xs, ts, latent_sde, bm_vis, global_step):
+    xs_model = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
+    print(xs_model.shape, xs.cpu().numpy().shape)
+    mse_loss = nn.MSELoss()
+    with torch.no_grad():
+        loss = mse_loss(xs, torch.tensor(xs_model))
+    logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},')
 
 
 def main(
@@ -324,6 +332,7 @@ def main(
             )
             img_path = os.path.join(train_dir, f'global_step_{global_step:06d}.pdf')
             vis(xs, ts, latent_sde, bm_vis, img_path)
+            log_MSE(xs, ts, latent_sde, bm_vis, global_step)
 
 
 if __name__ == "__main__":
