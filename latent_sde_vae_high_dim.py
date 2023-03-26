@@ -74,7 +74,7 @@ class Encoder(nn.Module):
 
 
 class LatentSDE(nn.Module):
-    sde_type = "ito"
+    sde_type = "stratonovich"
     noise_type = "diagonal"
 
     def __init__(self, data_size, latent_size, context_size, hidden_size):
