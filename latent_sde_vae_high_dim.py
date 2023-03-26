@@ -115,6 +115,9 @@ class LatentSDE(nn.Module):
             ]
         )
         self.projector = nn.Linear(latent_size, data_size)
+        self.noise_projector = nn.Sequential(
+            nn.Linear(latent_size, data_size),
+            nn.Softplus())
 
         self.pz0_mean = nn.Parameter(torch.zeros(1, latent_size))
         self.pz0_logstd = nn.Parameter(torch.zeros(1, latent_size))
@@ -158,9 +161,10 @@ class LatentSDE(nn.Module):
             zs, log_ratio = torchsde.sdeint(self, z0, ts, dt=1e-2, logqp=True, method=method)
 
         _xs = self.projector(zs)
-        xs_dist = Normal(loc=_xs, scale=noise_std)
-        log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
+        _noise = self.noise_projector(zs)
 
+        xs_dist = Normal(loc=_xs, scale=_noise)
+        log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
         qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
         pz0 = torch.distributions.Normal(loc=self.pz0_mean, scale=self.pz0_logstd.exp())
         logqp0 = torch.distributions.kl_divergence(qz0, pz0).sum(dim=1).mean(dim=0)
