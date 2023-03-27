@@ -60,15 +60,11 @@ class LinearScheduler(object):
 class Encoder(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Encoder, self).__init__()
-        self.gru1 = nn.GRU(input_size=input_size, hidden_size=hidden_size)
-        self.lin1 = nn.Linear(hidden_size, hidden_size*2)
-        self.gru = nn.GRU(input_size=hidden_size*2, hidden_size=hidden_size)
+        self.gru = nn.GRU(input_size=input_size, hidden_size=hidden_size)
         self.lin = nn.Linear(hidden_size, output_size)
 
     def forward(self, inp):
-        out, _ = self.gru1(inp)
-        out = self.lin1(out)
-        out, _ = self.gru(out)
+        out, _ = self.gru(inp)
         out = self.lin(out)
         return out
 
@@ -244,12 +240,12 @@ def main(
         context_size=64,
         hidden_size=128,
         lr_init=1e-2,
-        t0=0.,
-        t1=2,
+        t0=0.3,
+        t1=3,
         lr_gamma=0.997,
         dt = 0.01,
         num_iters=5000,
-        kl_anneal_iters=1000,
+        kl_anneal_iters=400,
         pause_every=50,
         noise_std=0.01,
         adjoint=True,
@@ -297,7 +293,7 @@ def main(
                 f'global_step: {global_step:06d}, lr: {lr_now:.5f}, '
                 f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f} \n'
             )
-            log_MSE(xs,ts,latent_sde,bm_vis, global_step)
+            log_MSE(xs, ts, latent_sde, bm_vis, global_step)
 
 
 if __name__ == "__main__":
