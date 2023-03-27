@@ -114,9 +114,12 @@ class LatentSDE(nn.Module):
                 for _ in range(latent_size)
             ]
         )
-        self.projector = nn.Linear(latent_size, data_size)
+        self.projector =  nn.Sequential(
+            nn.Linear(latent_size, data_size *2),
+            nn.Softplus(),
+            nn.Linear(data_size * 2,data_size ))
         self.noise_projector = nn.Sequential(
-            nn.Linear(latent_size, data_size),
+            nn.Linear(latent_size, data_size ),
             nn.Softplus())
 
         self.pz0_mean = nn.Parameter(torch.zeros(1, latent_size))
@@ -237,7 +240,7 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step):
 
 def main(
         batch_size=128,
-        latent_size=6,
+        latent_size=10,
         context_size=64,
         hidden_size=128,
         lr_init=1e-2,

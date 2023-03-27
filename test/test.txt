@@ -1,0 +1,3 @@
+INFO:root:current loss: 34.0851, global_step: 000010,
+INFO:root:current loss: 34.1171, global_step: 000010,
+

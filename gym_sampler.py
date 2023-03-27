@@ -3,6 +3,8 @@ from stable_baselines3 import SAC
 import os
 import torch
 import numpy as np
+import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -30,6 +32,38 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     return torch.tensor(data_buffer, dtype=torch.float32), ts
 
 
+def vis(xs, ts, img_path, num_samples=10):
+    fig = plt.figure(figsize=(20, 9))
+    gs = gridspec.GridSpec(1, 2)
+    ax00 = fig.add_subplot(gs[0, 0], projection='3d')
+    ax01 = fig.add_subplot(gs[0, 1], projection='3d')
+
+    # Left plot: data.
+    z1, z2, z3 = np.split(xs.cpu().numpy(), indices_or_sections=3, axis=-1)
+    print(z1.shape)
+    [ax00.plot(z1[ :,i, 0], z2[ :,i, 0], z3[:,i, 0]) for i in range(num_samples)]
+    ax00.scatter(z1[:,:num_samples, 0], z2[:,:num_samples ,0], z3[ :,:10,0], marker='x')
+    ax00.set_yticklabels([])
+    ax00.set_xticklabels([])
+    ax00.set_zticklabels([])
+    ax00.set_xlabel('$z_1$', labelpad=0., fontsize=16)
+    ax00.set_ylabel('$z_2$', labelpad=.5, fontsize=16)
+    ax00.set_zlabel('$z_3$', labelpad=0., horizontalalignment='center', fontsize=16)
+    ax00.set_title('Data', fontsize=20)
+    xlim = ax00.get_xlim()
+    ylim = ax00.get_ylim()
+    zlim = ax00.get_zlim()
+
+    plt.savefig(img_path)
+    plt.close()
+
+
 if __name__ == "__main__":
-    data_buffer = get_env_samples('Pendulum-v1', 'sac_pendulum', 10, 50, device)
+    data_buffer, ts = get_env_samples('HalfCheetah-v2', 'sac_HalfCheetah', 10, 10, device)
     print(data_buffer.shape)
+    ids = [0, 8, 9]
+    new_d = data_buffer.gather(2, torch.tensor(
+        [[ids for i in range(data_buffer.shape[1])] for j in range(data_buffer.shape[0])]))
+    print(new_d.shape)
+    img_path = os.path.join("./test/", f'test.pdf')
+    vis(new_d, ts, img_path, 10)
