@@ -286,6 +286,7 @@ def main(
         log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method)
         loss = -log_pxs + log_ratio * kl_scheduler.val
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(latent_sde.parameters(), 0.5)
         optimizer.step()
         scheduler.step()
         kl_scheduler.step()

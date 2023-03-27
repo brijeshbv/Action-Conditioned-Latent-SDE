@@ -1,22 +1,4 @@
-INFO:root:current loss: 511169789952.0000, global_step: 000010,
+INFO:root:current loss: 34.0817, global_step: 000010,
 
-INFO:root:current loss: 193829392.0000, global_step: 000010,
-
-INFO:root:current loss: 40.8861, global_step: 000010,
-
-INFO:root:current loss: 41.3861, global_step: 000010,
-
-INFO:root:current loss: 38.5435, global_step: 000010,
-
-INFO:root:current loss: 39.4786, global_step: 000010,
-
-INFO:root:current loss: 35.7160, global_step: 000010,
-
-INFO:root:current loss: 35.4004, global_step: 000010,
-
-INFO:root:current loss: 35.8946, global_step: 000010,
-
-INFO:root:current loss: 36.1603, global_step: 000010,
-
-INFO:root:current loss: 34.0915, global_step: 000010,
+INFO:root:current loss: 34.0829, global_step: 000010,
 
