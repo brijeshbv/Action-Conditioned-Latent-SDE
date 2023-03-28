@@ -35,7 +35,7 @@ import tqdm
 from torch import nn
 from torch import optim
 from torch.distributions import Normal
-from gym_sampler import get_env_samples
+from gym_utils import get_env_samples
 import torchsde
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'

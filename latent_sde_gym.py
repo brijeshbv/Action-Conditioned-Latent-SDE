@@ -26,7 +26,7 @@ import numpy as np
 import torch
 import tqdm
 from torch import distributions, nn, optim
-from gym_sampler import get_env_samples
+from gym_utils import get_env_samples
 import torchsde
 
 # w/ underscore -> numpy; w/o underscore -> torch.

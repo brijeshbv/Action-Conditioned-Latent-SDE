@@ -41,7 +41,6 @@ import torchsde
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 
-
 class LinearScheduler(object):
     def __init__(self, iters, maxval=1.0):
         self._iters = max(1, iters)
@@ -54,7 +53,6 @@ class LinearScheduler(object):
     @property
     def val(self):
         return self._val
-
 
 
 class Encoder(nn.Module):
@@ -110,13 +108,13 @@ class LatentSDE(nn.Module):
                 for _ in range(latent_size)
             ]
         )
-        self.projector =  nn.Sequential(
-            nn.Linear(latent_size, data_size *2),
+        self.projector = nn.Sequential(
+            nn.Linear(latent_size, data_size * 3),
             nn.Softplus(),
-            nn.Linear(data_size * 2,data_size ))
-        self.noise_projector = nn.Sequential(
-            nn.Linear(latent_size, data_size ),
-            nn.Softplus())
+            nn.Linear(data_size * 3, data_size *2),
+            nn.Softplus(),
+            nn.Linear(data_size * 2, data_size))
+
 
         self.pz0_mean = nn.Parameter(torch.zeros(1, latent_size))
         self.pz0_logstd = nn.Parameter(torch.zeros(1, latent_size))
@@ -155,14 +153,14 @@ class LatentSDE(nn.Module):
                     tuple(self.f_net.parameters()) + tuple(self.g_nets.parameters()) + tuple(self.h_net.parameters())
             )
             zs, log_ratio = torchsde.sdeint_adjoint(
-                self, z0, ts, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method, adjoint_method="adjoint_reversible_heun")
+                self, z0, ts, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
+                adjoint_method="adjoint_reversible_heun")
         else:
             zs, log_ratio = torchsde.sdeint(self, z0, ts, dt=self.dt, logqp=True, method=method)
 
         _xs = self.projector(zs)
-        _noise = self.noise_projector(zs)
 
-        xs_dist = Normal(loc=_xs, scale=_noise)
+        xs_dist = Normal(loc=_xs, scale=noise_std)
         log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
         qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
         pz0 = torch.distributions.Normal(loc=self.pz0_mean, scale=self.pz0_logstd.exp())
@@ -180,13 +178,12 @@ class LatentSDE(nn.Module):
         return _xs
 
 
-
 def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
     fig = plt.figure(figsize=(20, 9))
     gs = gridspec.GridSpec(1, 2)
     ax00 = fig.add_subplot(gs[0, 0], projection='3d')
     ax01 = fig.add_subplot(gs[0, 1], projection='3d')
-    xs = torch.hstack((xs[:,:,0],xs[:,:,8],xs[:,:,9]))
+    xs = torch.hstack((xs[:, :, 0], xs[:, :, 8], xs[:, :, 9]))
     print(xs.shape)
     # Left plot: data.
     z1, z2, z3 = np.split(xs.cpu().numpy(), indices_or_sections=3, axis=-1)
@@ -232,6 +229,7 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step):
     with torch.no_grad():
         loss = mse_loss(xs, torch.tensor(xs_model))
     logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
+    print(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
 
 
 def main(
@@ -240,10 +238,10 @@ def main(
         context_size=64,
         hidden_size=128,
         lr_init=1e-2,
-        t0=0.3,
+        t0=0,
         t1=3,
         lr_gamma=0.997,
-        dt = 0.01,
+        dt=0.01,
         num_iters=5000,
         kl_anneal_iters=400,
         pause_every=50,
@@ -254,9 +252,9 @@ def main(
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    xs,xs_test, ts = load_mocap_data_many_walks('./',t0, t1)
-    #to make it integer multiple
-    dt = (ts[1]-ts[0]) * 0.5
+    xs, xs_test, ts = load_mocap_data_many_walks('./', t0, t1)
+    # to make it integer multiple
+    dt = (ts[1] - ts[0]) * 0.5
     print(dt, ":dt")
 
     print("state space", xs.shape[-1])

@@ -35,7 +35,7 @@ import tqdm
 from torch import nn
 from torch import optim
 from torch.distributions import Normal
-from gym_sampler import get_env_samples
+from gym_utils import get_env_samples, render_mujoco, get_obs_from_initial_state, render_2_mujoco
 import torchsde
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -234,8 +234,14 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step):
     print(xs_model.shape, xs.cpu().numpy().shape)
     mse_loss = nn.MSELoss()
     with torch.no_grad():
-        loss = mse_loss(xs, torch.tensor(xs_model))
+
+        xs_T = np.transpose(xs_model, (1, 0, 2))
+        xs_true = get_obs_from_initial_state(xs_T[:,0,:],xs_T.shape[0],xs_T.shape[1])
+        print(xs_true.shape, xs_model.shape)
+        loss = mse_loss(xs_true, torch.tensor(xs_model))
+        #render_2_mujoco(xs_model[0],xs_true[0])
     logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},')
+    print(f'current loss: {loss:.4f}, global_step: {global_step:06d},')
 
 
 def main(
@@ -249,14 +255,14 @@ def main(
         lr_gamma=0.997,
         num_iters=5000,
         kl_anneal_iters=1000,
-        pause_every=50,
+        pause_every=10,
         noise_std=0.01,
         adjoint=True,
         train_dir='./dump/lorenz/',
         method="reversible_heun",
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    steps = 100
+    steps = 500
     xs, ts = get_env_samples('HalfCheetah-v2', 'sac_HalfCheetah', batch_size, steps, device)
     #xs, ts = make_dataset(t0=t0, t1=t1, batch_size=batch_size, noise_std=noise_std, train_dir=train_dir, device=device)
     print("state space", xs.shape[-1])
