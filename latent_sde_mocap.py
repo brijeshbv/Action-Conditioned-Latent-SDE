@@ -31,12 +31,12 @@ import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch.autograd import Variable
 import tqdm
 from torch import nn
 from torch import optim
 from torch.distributions import Normal
 from mocap_sampler import load_mocap_data_many_walks
+
 import torchsde
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -72,30 +72,24 @@ class LatentSDE(nn.Module):
     sde_type = "stratonovich"
     noise_type = "diagonal"
 
-    def __init__(self, data_size, latent_size, context_size, hidden_size, dt):
+    def __init__(self, data_size, latent_size, context_size, hidden_size):
         super(LatentSDE, self).__init__()
         # Encoder.
         self.encoder = Encoder(input_size=data_size, hidden_size=hidden_size, output_size=context_size)
         self.qz0_net = nn.Linear(context_size, latent_size + latent_size)
-        self.dt = dt
+
         # Decoder.
-        #prior
         self.f_net = nn.Sequential(
             nn.Linear(latent_size + context_size, hidden_size),
             nn.Softplus(),
-            nn.Linear(hidden_size, 2 * hidden_size),
-            nn.Softplus(),
-            nn.Linear(2 * hidden_size, hidden_size),
+            nn.Linear(hidden_size, hidden_size),
             nn.Softplus(),
             nn.Linear(hidden_size, latent_size),
         )
-        #posterior
         self.h_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
             nn.Softplus(),
-            nn.Linear(hidden_size, 2 * hidden_size),
-            nn.Softplus(),
-            nn.Linear(2 * hidden_size, hidden_size),
+            nn.Linear(hidden_size, hidden_size),
             nn.Softplus(),
             nn.Linear(hidden_size, latent_size),
         )
@@ -114,14 +108,7 @@ class LatentSDE(nn.Module):
         self.projector = nn.Sequential(
             nn.Linear(latent_size, latent_size * 4),
             nn.Tanh(),
-            nn.Linear(latent_size * 4, latent_size * 3),
-            nn.Tanh())
-        self.mean_project = nn.Linear(latent_size * 3, data_size)
-        self.variance_project = nn.Sequential(
-            nn.Linear(latent_size * 3, data_size),
-            nn.Sigmoid())
-
-
+            nn.Linear(latent_size * 4, data_size))
         self.pz0_mean = nn.Parameter(torch.zeros(1, latent_size))
         self.pz0_logstd = nn.Parameter(torch.zeros(1, latent_size))
 
@@ -145,7 +132,6 @@ class LatentSDE(nn.Module):
 
     def forward(self, xs, ts, noise_std, adjoint=False, method="reversible_heun"):
         # Contextualization is only needed for posterior inference.
-
         ctx = self.encoder(torch.flip(xs, dims=(0,)))
         ctx = torch.flip(ctx, dims=(0,))
         self.contextualize((ts, ctx))
@@ -160,17 +146,15 @@ class LatentSDE(nn.Module):
                     tuple(self.f_net.parameters()) + tuple(self.g_nets.parameters()) + tuple(self.h_net.parameters())
             )
             zs, log_ratio = torchsde.sdeint_adjoint(
-                self, z0, ts, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
-                adjoint_method="adjoint_reversible_heun")
+                self, z0, ts, adjoint_params=adjoint_params, dt=0.2, logqp=True, method=method,
+                adjoint_method='adjoint_reversible_heun')
         else:
-            zs, log_ratio = torchsde.sdeint(self, z0, ts, dt=self.dt, logqp=True, method=method)
+            zs, log_ratio = torchsde.sdeint(self, z0, ts, dt=1e-2, logqp=True, method=method)
 
         _xs = self.projector(zs)
-        _xs_mean = self.mean_project(_xs)
-        _xs_var = self.variance_project(_xs)
-
-        xs_dist = Normal(loc=_xs_mean, scale=_xs_var)
+        xs_dist = Normal(loc=_xs, scale=noise_std)
         log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
+
         qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
         pz0 = torch.distributions.Normal(loc=self.pz0_mean, scale=self.pz0_logstd.exp())
         logqp0 = torch.distributions.kl_divergence(qz0, pz0).sum(dim=1).mean(dim=0)
@@ -181,17 +165,22 @@ class LatentSDE(nn.Module):
     def sample(self, batch_size, ts, bm=None):
         eps = torch.randn(size=(batch_size, *self.pz0_mean.shape[1:]), device=self.pz0_mean.device)
         z0 = self.pz0_mean + self.pz0_logstd.exp() * eps
-        zs = torchsde.sdeint(self, z0, ts, names={'drift': 'h'}, dt=self.dt, bm=bm)
-        # Most of the time in ML, we don't sample the observation noise for visualization purposes.
+        zs = torchsde.sdeint(self, z0, ts, names={'drift': 'h'}, dt=0.2, bm=bm)
+        # Most of the times in ML, we don't sample the observation noise for visualization purposes.
         _xs = self.projector(zs)
-        _xs_mean = self.mean_project(_xs)
-        _xs_var = self.variance_project(_xs)
-        return _xs_mean
+        return _xs
 
-    def reparameterize(self, mu, std):
-        vector_size = std.size()
-        eps = Variable(torch.FloatTensor(vector_size).normal_())
-        return eps.mul(std).add_(mu)
+
+def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
+    xs_model = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
+    print(xs_model.shape, xs.cpu().numpy().shape)
+    mse_loss = nn.MSELoss()
+    with torch.no_grad():
+        loss = mse_loss(xs, torch.tensor(xs_model))
+        xs_m_t = np.transpose(xs_model, (1, 0, 2))
+        xs_t = np.transpose(xs, (1, 0, 2))
+        plot_cmu_mocap_recs(xs_t, xs_m_t, 0, True, f'{train_dir}/recon_{global_step:06d}')
+    logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
 
 
 def plot_cmu_mocap_recs(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
@@ -209,122 +198,59 @@ def plot_cmu_mocap_recs(X, Xrec, idx=0, show=False, fname='reconstructions.png')
         plt.close()
 
 
-def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
-    fig = plt.figure(figsize=(20, 9))
-    gs = gridspec.GridSpec(1, 2)
-    ax00 = fig.add_subplot(gs[0, 0], projection='3d')
-    ax01 = fig.add_subplot(gs[0, 1], projection='3d')
-    xs = torch.hstack((xs[:, :, 0], xs[:, :, 8], xs[:, :, 9]))
-    print(xs.shape)
-    # Left plot: data.
-    z1, z2, z3 = np.split(xs.cpu().numpy(), indices_or_sections=3, axis=-1)
-    [ax00.plot(z1[:, i, 0], z2[:, i, 0], z3[:, i, 0]) for i in range(num_samples)]
-    ax00.scatter(z1[0, :num_samples, 0], z2[0, :num_samples, 0], z3[0, :10, 0], marker='x')
-    ax00.set_yticklabels([])
-    ax00.set_xticklabels([])
-    ax00.set_zticklabels([])
-    ax00.set_xlabel('$z_1$', labelpad=0., fontsize=16)
-    ax00.set_ylabel('$z_2$', labelpad=.5, fontsize=16)
-    ax00.set_zlabel('$z_3$', labelpad=0., horizontalalignment='center', fontsize=16)
-    ax00.set_title('Data', fontsize=20)
-    xlim = ax00.get_xlim()
-    ylim = ax00.get_ylim()
-    zlim = ax00.get_zlim()
-
-    # Right plot: samples from learned model.
-    xs = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
-    xs = torch.vstack((xs[0], xs[8], xs[9]))
-    z1, z2, z3 = np.split(xs, indices_or_sections=3, axis=-1)
-
-    [ax01.plot(z1[:, i, 0], z2[:, i, 0], z3[:, i, 0]) for i in range(num_samples)]
-    ax01.scatter(z1[0, :num_samples, 0], z2[0, :num_samples, 0], z3[0, :10, 0], marker='x')
-    ax01.set_yticklabels([])
-    ax01.set_xticklabels([])
-    ax01.set_zticklabels([])
-    ax01.set_xlabel('$z_1$', labelpad=0., fontsize=16)
-    ax01.set_ylabel('$z_2$', labelpad=.5, fontsize=16)
-    ax01.set_zlabel('$z_3$', labelpad=0., horizontalalignment='center', fontsize=16)
-    ax01.set_title('Samples', fontsize=20)
-    ax01.set_xlim(xlim)
-    ax01.set_ylim(ylim)
-    ax01.set_zlim(zlim)
-
-    plt.savefig(img_path)
-    plt.close()
-
-
-def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
-    xs_model = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
-    print(xs_model.shape, xs.cpu().numpy().shape)
-    mse_loss = nn.MSELoss()
-    with torch.no_grad():
-        loss = mse_loss(xs, torch.tensor(xs_model))
-        xs_m_t = np.transpose(xs_model, (1, 0, 2))
-        xs_t = np.transpose(xs, (1, 0, 2))
-        plot_cmu_mocap_recs(xs_t, xs_m_t, 0, True, f'{train_dir}/recon_{global_step:06d}')
-
-    logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
-    print(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
-
-
 def main(
         batch_size=16,
         latent_size=6,
         context_size=64,
         hidden_size=128,
-        lr_init=1e-2,
-        t0=0,
-        t1=2,
+        lr_init=1e-3,
+        t0=0.3,
+        t1=30.,
         lr_gamma=0.997,
-        dt=0.01,
         num_iters=5000,
         kl_anneal_iters=400,
         pause_every=50,
         noise_std=0.01,
+        dt=0.2,
         adjoint=True,
         train_dir='./dump/lorenz/',
         method="reversible_heun",
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    xs, xs_test, ts = load_mocap_data_many_walks('./', t0, t1)
-    # to make it integer multiple
-    dt = 0.01
-    print(dt, ":dt")
-
-
+    xs, xs_test, ts = load_mocap_data_many_walks('./', t0, t1, dt)
     latent_sde = LatentSDE(
         data_size=xs.shape[-1],
         latent_size=latent_size,
         context_size=context_size,
         hidden_size=hidden_size,
-        dt=dt,
     ).to(device)
     optimizer = optim.Adam(params=latent_sde.parameters(), lr=lr_init)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
-    kl_scheduler = LinearScheduler(iters=kl_anneal_iters, maxval=0.9)
+    kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
 
     # Fix the same Brownian motion for visualization.
     bm_vis = torchsde.BrownianInterval(
         t0=t0, t1=t1, size=(batch_size, latent_size,), device=device, levy_area_approximation="space-time")
-    log_MSE(xs, ts, latent_sde, bm_vis, 10, train_dir)
+    log_MSE(xs, ts, latent_sde, bm_vis, 0, train_dir)
 
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
         latent_sde.zero_grad()
         log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method)
         loss = -log_pxs + log_ratio * kl_scheduler.val
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(latent_sde.parameters(), 0.5)
+        torch.nn.utils.clip_grad_norm(parameters=latent_sde.parameters(), max_norm=10, norm_type=2.0)
         optimizer.step()
         scheduler.step()
         kl_scheduler.step()
 
         if global_step % pause_every == 0:
             lr_now = optimizer.param_groups[0]['lr']
-            logging.info(
+            logging.warning(
                 f'global_step: {global_step:06d}, lr: {lr_now:.5f}, '
-                f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f} \n'
+                f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f}\n'
             )
+            img_path = os.path.join(train_dir, f'global_step_{global_step:06d}.pdf')
             log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir)
 
 

@@ -2,3 +2,4 @@
 *.pdf
 /dump
 __pycache__/
+*.png
