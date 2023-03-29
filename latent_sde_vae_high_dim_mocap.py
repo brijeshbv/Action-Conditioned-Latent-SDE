@@ -58,12 +58,18 @@ class LinearScheduler(object):
 class Encoder(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Encoder, self).__init__()
-        self.gru = nn.GRU(input_size=input_size, hidden_size=hidden_size)
-        self.lin = nn.Linear(hidden_size, output_size)
+        self.lin1 = nn.Linear(input_size * 3, hidden_size * 2)
+        self.soft1 = nn.Softplus()
+        self.lin2 = nn.Linear(hidden_size * 2, hidden_size)
+        self.soft2 = nn.Softplus()
+        self.lin3 = nn.Linear(hidden_size, output_size)
 
     def forward(self, inp):
-        out, _ = self.gru(inp)
-        out = self.lin(out)
+        out = self.lin1(inp)
+        out = self.soft1(out)
+        out = self.lin2(out)
+        out = self.soft2(out)
+        out = self.lin3(out)
         return out
 
 
@@ -78,6 +84,7 @@ class LatentSDE(nn.Module):
         self.qz0_net = nn.Linear(context_size, latent_size + latent_size)
         self.dt = dt
         # Decoder.
+        #prior
         self.f_net = nn.Sequential(
             nn.Linear(latent_size + context_size, hidden_size),
             nn.Softplus(),
@@ -87,6 +94,7 @@ class LatentSDE(nn.Module):
             nn.Softplus(),
             nn.Linear(hidden_size, latent_size),
         )
+        #posterior
         self.h_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
             nn.Softplus(),
@@ -111,10 +119,14 @@ class LatentSDE(nn.Module):
         self.projector = nn.Sequential(
             nn.Linear(latent_size, data_size * 3),
             nn.Softplus(),
-            nn.Linear(data_size * 3, data_size *2),
+            nn.Linear(data_size * 3, data_size * 2),
             nn.Softplus(),
             nn.Linear(data_size * 2, data_size))
-
+        self.projector1 = nn.Sequential(
+            nn.Linear(latent_size, data_size * 2),
+            nn.Softplus(),
+            nn.Linear(data_size * 2, data_size),
+            nn.Softplus())
 
         self.pz0_mean = nn.Parameter(torch.zeros(1, latent_size))
         self.pz0_logstd = nn.Parameter(torch.zeros(1, latent_size))
@@ -127,7 +139,7 @@ class LatentSDE(nn.Module):
     def f(self, t, y):
         ts, ctx = self._ctx
         i = min(torch.searchsorted(ts, t, right=True), len(ts) - 1)
-        return self.f_net(torch.cat((y, ctx[i]), dim=1))
+        return self.f_net(torch.cat((y, ctx[0]), dim=1))
 
     def h(self, t, y):
         return self.h_net(y)
@@ -139,7 +151,10 @@ class LatentSDE(nn.Module):
 
     def forward(self, xs, ts, noise_std, adjoint=False, method="reversible_heun"):
         # Contextualization is only needed for posterior inference.
-        ctx = self.encoder(torch.flip(xs, dims=(0,)))
+        three_encoded_frames = torch.concatenate((xs[0], xs[1], xs[2]), dim=1)
+        three_encoded_frames = torch.reshape(three_encoded_frames,
+                                             (1, three_encoded_frames.shape[0], three_encoded_frames.shape[1]))
+        ctx = self.encoder(three_encoded_frames)
         ctx = torch.flip(ctx, dims=(0,))
         self.contextualize((ts, ctx))
 
@@ -159,8 +174,9 @@ class LatentSDE(nn.Module):
             zs, log_ratio = torchsde.sdeint(self, z0, ts, dt=self.dt, logqp=True, method=method)
 
         _xs = self.projector(zs)
+        _noise = self.projector1(zs)
 
-        xs_dist = Normal(loc=_xs, scale=noise_std)
+        xs_dist = Normal(loc=_xs, scale=_noise)
         log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
         qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
         pz0 = torch.distributions.Normal(loc=self.pz0_mean, scale=self.pz0_logstd.exp())
@@ -176,6 +192,21 @@ class LatentSDE(nn.Module):
         # Most of the times in ML, we don't sample the observation noise for visualization purposes.
         _xs = self.projector(zs)
         return _xs
+
+
+def plot_cmu_mocap_recs(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
+    tt = X.shape[1]
+    D = X.shape[2]
+    nrows = np.ceil(D / 5).astype(int)
+    lag = X.shape[1] - Xrec.shape[1]
+    plt.figure(2, figsize=(20, 40))
+    for i in range(D):
+        plt.subplot(nrows, 5, i + 1)
+        plt.plot(range(0, tt), X[idx, :, i], 'r.')
+        plt.plot(range(lag, tt), Xrec[idx, :, i], 'b.-')
+    plt.savefig(fname)
+    if show is False:
+        plt.close()
 
 
 def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
@@ -222,24 +253,28 @@ def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
     plt.close()
 
 
-def log_MSE(xs, ts, latent_sde, bm_vis, global_step):
+def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
     xs_model = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
     print(xs_model.shape, xs.cpu().numpy().shape)
     mse_loss = nn.MSELoss()
     with torch.no_grad():
         loss = mse_loss(xs, torch.tensor(xs_model))
+        xs_m_t = np.transpose(xs_model, (1, 0, 2))
+        xs_t = np.transpose(xs, (1, 0, 2))
+        plot_cmu_mocap_recs(xs_t, xs_m_t, 0, True, f'{train_dir}/recon_{global_step:06d}')
+
     logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
     print(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
 
 
 def main(
         batch_size=16,
-        latent_size=10,
+        latent_size=6,
         context_size=64,
         hidden_size=128,
         lr_init=1e-2,
         t0=0,
-        t1=3,
+        t1=2,
         lr_gamma=0.997,
         dt=0.01,
         num_iters=5000,
@@ -254,10 +289,9 @@ def main(
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
     xs, xs_test, ts = load_mocap_data_many_walks('./', t0, t1)
     # to make it integer multiple
-    dt = (ts[1] - ts[0]) * 0.5
+    dt = 0.01
     print(dt, ":dt")
 
-    print("state space", xs.shape[-1])
 
     latent_sde = LatentSDE(
         data_size=xs.shape[-1],
@@ -268,12 +302,12 @@ def main(
     ).to(device)
     optimizer = optim.Adam(params=latent_sde.parameters(), lr=lr_init)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
-    kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
+    kl_scheduler = LinearScheduler(iters=kl_anneal_iters, maxval=0.9)
 
     # Fix the same Brownian motion for visualization.
     bm_vis = torchsde.BrownianInterval(
         t0=t0, t1=t1, size=(batch_size, latent_size,), device=device, levy_area_approximation="space-time")
-    log_MSE(xs, ts, latent_sde, bm_vis, 10)
+    log_MSE(xs, ts, latent_sde, bm_vis, 10, train_dir)
 
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
         latent_sde.zero_grad()
@@ -291,7 +325,7 @@ def main(
                 f'global_step: {global_step:06d}, lr: {lr_now:.5f}, '
                 f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f} \n'
             )
-            log_MSE(xs, ts, latent_sde, bm_vis, global_step)
+            log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir)
 
 
 if __name__ == "__main__":

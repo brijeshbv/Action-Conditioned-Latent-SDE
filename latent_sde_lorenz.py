@@ -272,13 +272,33 @@ def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
 
     plt.savefig(img_path)
     plt.close()
-def log_MSE(xs, ts, latent_sde, bm_vis, global_step):
+
+
+def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
     xs_model = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
     print(xs_model.shape, xs.cpu().numpy().shape)
     mse_loss = nn.MSELoss()
     with torch.no_grad():
         loss = mse_loss(xs, torch.tensor(xs_model))
-    logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},')
+        xs_m_t = np.transpose(xs_model, (1, 0, 2))
+        xs_t = np.transpose(xs, (1, 0, 2))
+        plot_cmu_mocap_recs(xs_t, xs_m_t, 0, True, f'{train_dir}/recon_{global_step:06d}')
+    logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
+
+
+def plot_cmu_mocap_recs(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
+    tt = X.shape[1]
+    D = X.shape[2]
+    nrows = np.ceil(D / 5).astype(int)
+    lag = X.shape[1] - Xrec.shape[1]
+    plt.figure(2, figsize=(20, 20))
+    for i in range(D):
+        plt.subplot(nrows, 3, i + 1)
+        plt.plot(range(0, tt), X[idx, :, i], 'r.')
+        plt.plot(range(lag, tt), Xrec[idx, :, i], 'b.-')
+    plt.savefig(fname)
+    if show is False:
+        plt.close()
 
 
 def main(
@@ -314,7 +334,7 @@ def main(
     # Fix the same Brownian motion for visualization.
     bm_vis = torchsde.BrownianInterval(
         t0=t0, t1=t1, size=(batch_size, latent_size,), device=device, levy_area_approximation="space-time")
-    vis(xs, ts, latent_sde, bm_vis, "something")
+    log_MSE(xs, ts, latent_sde, bm_vis, 0, train_dir)
 
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
         latent_sde.zero_grad()
@@ -329,11 +349,11 @@ def main(
             lr_now = optimizer.param_groups[0]['lr']
             logging.warning(
                 f'global_step: {global_step:06d}, lr: {lr_now:.5f}, '
-                f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f}'
+                f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f}\n'
             )
             img_path = os.path.join(train_dir, f'global_step_{global_step:06d}.pdf')
             vis(xs, ts, latent_sde, bm_vis, img_path)
-            log_MSE(xs, ts, latent_sde, bm_vis, global_step)
+            log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir)
 
 
 if __name__ == "__main__":
