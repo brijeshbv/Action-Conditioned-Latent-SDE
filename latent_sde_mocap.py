@@ -178,7 +178,7 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
     print(xs_model.shape, xs.cpu().numpy().shape)
     mse_loss = nn.MSELoss()
     with torch.no_grad():
-        loss = mse_loss(xs, torch.tensor(xs_model))
+        loss = mse_loss(xs[:,0,:], torch.tensor(xs_model[:,0,:]))
         xs_m_t = np.transpose(xs_model, (1, 0, 2))
         xs_t = np.transpose(xs, (1, 0, 2))
         plot_cmu_mocap_recs(xs_t, xs_m_t, 0, False, f'{train_dir}/recon_{global_step:06d}')

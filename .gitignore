@@ -4,3 +4,4 @@
 __pycache__/
 *.png
 test_sde_mocap/*.png
+test_vae_mocap/*.png
