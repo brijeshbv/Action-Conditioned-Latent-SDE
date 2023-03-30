@@ -106,7 +106,9 @@ class LatentSDE(nn.Module):
             ]
         )
         self.projector = nn.Sequential(
-            nn.Linear(latent_size, latent_size * 4),
+            nn.Linear(latent_size, latent_size * 2),
+            nn.Tanh(),
+            nn.Linear(latent_size * 2, latent_size * 4),
             nn.Tanh(),
             nn.Linear(latent_size * 4, data_size))
         self.pz0_mean = nn.Parameter(torch.zeros(1, latent_size))
@@ -179,7 +181,7 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
         loss = mse_loss(xs, torch.tensor(xs_model))
         xs_m_t = np.transpose(xs_model, (1, 0, 2))
         xs_t = np.transpose(xs, (1, 0, 2))
-        plot_cmu_mocap_recs(xs_t, xs_m_t, 0, True, f'{train_dir}/recon_{global_step:06d}')
+        plot_cmu_mocap_recs(xs_t, xs_m_t, 0, False, f'{train_dir}/recon_{global_step:06d}')
     logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
 
 
