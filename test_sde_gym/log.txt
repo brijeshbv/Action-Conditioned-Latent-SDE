@@ -1,0 +1,2 @@
+INFO:root:current loss: 18.4106, global_step: 000000,
+
