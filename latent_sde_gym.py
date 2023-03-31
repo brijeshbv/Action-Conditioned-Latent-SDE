@@ -178,9 +178,9 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
     mse_loss = nn.MSELoss()
     with torch.no_grad():
         xs_T = np.transpose(xs_model, (1, 0, 2))
-        xs_true = get_obs_from_initial_state(xs_T[:, 0, :], xs_T.shape[0], xs_T.shape[1])
-        print(xs_true.shape, xs_model.shape)
-        loss = mse_loss(xs_true[:, 0, :], torch.tensor(xs_model[:, 0, :]))
+        #xs_true = get_obs_from_initial_state(xs_T[:, 0, :], xs_T.shape[0], xs_T.shape[1])
+       # print(xs_true.shape, xs_model.shape)
+        loss = mse_loss(xs[:, 0, :], torch.tensor(xs_model[:, 0, :]))
         xs_m_t = np.transpose(xs_model, (1, 0, 2))
         xs_t = np.transpose(xs, (1, 0, 2))
         plot_gym_results(xs_t, xs_m_t, 0, False, f'{train_dir}/recon_{global_step:06d}')
@@ -223,7 +223,7 @@ def main(
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
     steps = 300
-    xs, ts = get_env_samples('HalfCheetah-v2', 'sac_HalfCheetah', batch_size, steps, device)
+    xs, ts = get_env_samples('LunarLander-v2', 'dqn_lunar', batch_size, steps, device)
     latent_sde = LatentSDE(
         data_size=xs.shape[-1],
         latent_size=latent_size,

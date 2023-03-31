@@ -35,7 +35,7 @@ def render_2_mujoco(xs_1 = None, xs_2 = None):
 
 def get_obs_from_initial_state(x0, batch_size, steps):
     env = PseudoGym()
-    model = SAC.load('sac_HalfCheetah', device=device)
+    model = SAC.load('sac_dqn_lunar', device=device)
     buffer = np.array([], dtype=np.float32)
     for i in range(batch_size):
         env.set_internal_state(x0[i])
