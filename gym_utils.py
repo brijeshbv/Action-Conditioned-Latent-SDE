@@ -97,6 +97,9 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
             data_buffer = np.append(data_buffer, [observations], axis=0)
     ts = torch.linspace(t0, t1, steps=steps, device=device)
     data_buffer = np.transpose(data_buffer, (1, 0, 2))
+    data_mean = data_buffer.mean(axis=0)
+    for i in range(data_buffer.shape[0]):
+        data_buffer[i] = data_buffer[i] - data_mean
     print(data_buffer.shape)
     return torch.tensor(data_buffer, dtype=torch.float32), ts
 
