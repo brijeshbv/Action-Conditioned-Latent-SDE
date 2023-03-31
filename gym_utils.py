@@ -35,7 +35,7 @@ def render_2_mujoco(xs_1 = None, xs_2 = None):
 
 def get_obs_from_initial_state(x0, batch_size, steps):
     env = PseudoGym()
-    model = SAC.load('sac_pendulum', device=device)
+    model = SAC.load('sac_HalfCheetah', device=device)
     buffer = np.array([], dtype=np.float32)
     for i in range(batch_size):
         env.set_internal_state(x0[i])
@@ -43,7 +43,7 @@ def get_obs_from_initial_state(x0, batch_size, steps):
         observations = np.array([obs], dtype=np.float32)
         for j in range(steps - 1):
             action, _states = model.predict(obs, deterministic=True)
-            obs, reward, done, info, extra = env.step(action)
+            obs, reward, done, info = env.step(action)
             observations = np.vstack((observations, obs))
         if i == 0:
             buffer = np.array([observations])
@@ -85,11 +85,11 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     data_buffer = np.array([], dtype=np.float32)
 
     for i in range(batch_size):
-        obs = env.reset()
+        obs, extra = env.reset()
         observations = np.array([obs], dtype=np.float32)
         for j in range(steps - 1):
             action, _states = model.predict(obs, deterministic=True)
-            obs, reward, done, info = env.step(action)
+            obs, reward, done, info, extra = env.step(action)
             observations = np.vstack((observations, obs))
         if i == 0:
             data_buffer = np.array([observations])
