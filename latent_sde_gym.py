@@ -223,7 +223,7 @@ def main(
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
     steps = 300
-    xs, ts = get_env_samples('Humanoid-v4', 'sac_humanoid', batch_size, steps, device)
+    xs, ts = get_env_samples('Humanoid-v2', 'sac_humanoid', batch_size, steps, device)
     latent_sde = LatentSDE(
         data_size=xs.shape[-1],
         latent_size=latent_size,
