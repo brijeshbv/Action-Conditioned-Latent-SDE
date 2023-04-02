@@ -3,11 +3,11 @@ import numpy as np
 
 from stable_baselines3 import SAC
 
-env = gym.make("HumanoidStandup-v4")
+env = gym.make("HumanoidStandup-v2")
 
 model = SAC("MlpPolicy", env, verbose=1)
 model.learn(total_timesteps=10000, log_interval=4)
-model.save("sac_pendulum")
+model.save("sac_humanoid")
 
 del model # remove to demonstrate saving and loading
 
