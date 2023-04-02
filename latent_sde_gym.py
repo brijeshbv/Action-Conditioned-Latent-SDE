@@ -189,10 +189,10 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
 
 def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
     tt = X.shape[1]
-    D = X.shape[2]
+    D = np.ceil(X.shape[2]/10).astype(int)
     nrows = np.ceil(D / 3).astype(int)
     lag = X.shape[1] - Xrec.shape[1]
-    plt.figure(2, figsize=(20, 40))
+    plt.figure(2, figsize=(200, 400))
     for i in range(D):
         plt.subplot(nrows, 3, i + 1)
         plt.plot(range(0, tt), X[idx, :, i], 'r.-')
@@ -204,7 +204,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 def main(
         batch_size=32,
-        latent_size=10,
+        latent_size=30,
         context_size=64,
         hidden_size=128,
         lr_init=1e-3,
@@ -223,7 +223,7 @@ def main(
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
     steps = 300
-    xs, ts = get_env_samples('LunarLander-v2', 'dqn_lunar', batch_size, steps, device)
+    xs, ts = get_env_samples('Humanoid-v4', 'sac_humanoid', batch_size, steps, device)
     latent_sde = LatentSDE(
         data_size=xs.shape[-1],
         latent_size=latent_size,
