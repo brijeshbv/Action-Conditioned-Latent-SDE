@@ -35,7 +35,7 @@ def render_2_mujoco(xs_1 = None, xs_2 = None):
 
 def get_obs_from_initial_state(x0, batch_size, steps):
     env = PseudoGym()
-    model = SAC.load('sac_humanoid', device=device)
+    model = SAC.load('sac_hopper', device=device)
     buffer = np.array([], dtype=np.float32)
     for i in range(batch_size):
         env.set_internal_state(x0[i])
@@ -107,7 +107,7 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
 
 
 if __name__ == "__main__":
-    data_buffer, ts = get_env_samples('HalfCheetah-v2', 'sac_HalfCheetah', 2, 500, device)
+    data_buffer, ts = get_env_samples('Swimmer-v2', 'sac_swimmer', 2, 500, device)
     data_buffer = np.transpose(data_buffer, (1, 0, 2))
     render_mujoco(data_buffer[1])
     print(data_buffer.shape)

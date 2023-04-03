@@ -3,15 +3,15 @@ import numpy as np
 
 from stable_baselines3 import SAC
 
-env = gym.make("HumanoidStandup-v2")
+env = gym.make("Hopper-v2")
 
 model = SAC("MlpPolicy", env, verbose=1)
 model.learn(total_timesteps=10000, log_interval=4)
-model.save("sac_humanoid")
+model.save("sac_hopper")
 
 del model # remove to demonstrate saving and loading
 
-model = SAC.load("sac_humanoid")
+model = SAC.load("sac_hopper")
 
 obs = env.reset()
 while True:
