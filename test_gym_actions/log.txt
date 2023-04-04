@@ -1,0 +1,20 @@
+INFO:root:current loss: 1.5586, global_step: 000000,
+
+INFO:root:current loss: 2.1304, global_step: 000000,
+
+INFO:root:current loss: 3.7060, global_step: 000000,
+
+INFO:root:current loss: 1.5736, global_step: 000000,
+
+INFO:root:current loss: 2.1716, global_step: 000000,
+
+INFO:root:current loss: 2.0976, global_step: 000000,
+
+INFO:root:current loss: 2.0942, global_step: 000000,
+
+INFO:root:current loss: 2.1375, global_step: 000000,
+
+INFO:root:current loss: 2.1738, global_step: 000000,
+
+INFO:root:current loss: 2.2661, global_step: 000000,
+

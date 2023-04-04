@@ -79,6 +79,39 @@ def vis(xs, ts, img_path, num_samples=10):
     plt.savefig(img_path)
     plt.close()
 
+def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
+    env = gym.make(env)
+    model = SAC.load(model_file, device=device)
+    data_buffer = np.array([], dtype=np.float32)
+    action_buffer = np.array([], dtype=np.float32)
+
+    for i in range(batch_size):
+        obs, extra = env.reset()
+        observations = np.array([obs], dtype=np.float32)
+        actions = np.array([],dtype=np.float32)
+        for j in range(steps - 1):
+            action, _states = model.predict(obs, deterministic=True)
+            obs, reward, done, info, extra = env.step(action)
+            observations = np.vstack((observations, obs))
+            if j == 0 :
+                actions = np.array([action], dtype=np.float32)
+            else:
+                actions = np.vstack((actions, action))
+        if i == 0:
+            data_buffer = np.array([observations])
+            action_buffer = np.array([actions])
+        else:
+            data_buffer = np.append(data_buffer, [observations], axis=0)
+            action_buffer = np.append(action_buffer, [actions], axis=0)
+    ts = torch.linspace(t0, t1, steps=steps, device=device)
+    data_buffer = np.transpose(data_buffer, (1, 0, 2))
+    action_buffer = np.transpose(action_buffer, (1, 0, 2))
+    data_mean = data_buffer.mean(axis=0)
+    for i in range(data_buffer.shape[0]):
+        data_buffer[i] = data_buffer[i] - data_mean
+    print(data_buffer.shape)
+    return torch.tensor(data_buffer, dtype=torch.float32), ts, torch.tensor(action_buffer, dtype=torch.float32)
+
 def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     env = gym.make(env)
     model = SAC.load(model_file, device=device)
@@ -87,6 +120,7 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     for i in range(batch_size):
         obs = env.reset()
         observations = np.array([obs], dtype=np.float32)
+        actions = np.array([],dtype=np.float32)
         for j in range(steps - 1):
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, info = env.step(action)
@@ -107,7 +141,7 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
 
 
 if __name__ == "__main__":
-    data_buffer, ts = get_env_samples('Swimmer-v2', 'sac_swimmer', 2, 500, device)
+    data_buffer, ts, actions = get_encoded_env_samples('Swimmer-v2', 'sac_swimmer', 2, 500, device)
     data_buffer = np.transpose(data_buffer, (1, 0, 2))
     render_mujoco(data_buffer[1])
     print(data_buffer.shape)
