@@ -152,9 +152,9 @@ class LatentSDE(nn.Module):
             zs, log_ratio = torchsde.sdeint_adjoint(
                 self, z0, ts, adjoint_params=adjoint_params, dt=0.2, logqp=True, method=method,
                 adjoint_method='adjoint_reversible_heun')
-            zs_concat = torch.cat((zs[1:, :, :], actions), dim=2)
+            zs_concat = torch.cat((zs[:-1, :, :], actions), dim=2)
             zs_ = self.encode_actions(zs_concat)
-            zs_ = torch.cat((zs[0, :, :].resize(1,zs.shape[1],zs.shape[2]), zs_), dim=0)
+            zs_ = torch.cat((zs_, zs[-1, :, :].resize(1,zs.shape[1],zs.shape[2])), dim=0)
         else:
             zs, log_ratio = torchsde.sdeint(self, z0, ts, dt=1e-2, logqp=True, method=method)
 
