@@ -47,7 +47,7 @@ from .. import misc
 from ...settings import SDE_TYPES, NOISE_TYPES, LEVY_AREA_APPROXIMATIONS, METHODS
 
 
-class ReversibleHeun(action_condn_basesdesolver.ActionConditionedBaseSDESolver):
+class ReversibleHeun(base_solver.BaseSDESolver):
     weak_order = 1.0
     sde_type = SDE_TYPES.stratonovich
     noise_types = NOISE_TYPES.all()

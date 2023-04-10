@@ -220,7 +220,7 @@ def main(
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    xs, xs_test, ts = load_mocap_data_many_walks('./', t0, t1, dt)
+    xs, xs_test, ts = load_mocap_data_many_walks('../', t0, t1, dt)
     latent_sde = LatentSDE(
         data_size=xs.shape[-1],
         latent_size=latent_size,

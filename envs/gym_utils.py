@@ -1,4 +1,3 @@
-
 from stable_baselines3 import SAC
 import os
 import torch
@@ -6,32 +5,15 @@ import numpy as np
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import gym
-from pseudo_gym import PseudoGym
+from envs.pseudo_gym import PseudoGym
+from torch.utils.data import TensorDataset, DataLoader
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def render_mujoco(xs = None):
-    env = PseudoGym()
-    obs = env.reset()
-    print(xs.shape)
-    for i in range(xs.shape[0]):
-        env.set_internal_state(xs[i])
-        env.render()
 
-def render_2_mujoco(xs_1 = None, xs_2 = None):
-    env1 = PseudoGym()
-    env2 = PseudoGym()
-    obs = env1.reset()
-    obs = env2.reset()
-    print(xs_1.shape)
-    for i in range(xs_1.shape[0]):
-        env2.set_internal_state(xs_2[i])
-        env2.render()
-        env1.set_internal_state(xs_1[i])
-        env1.render()
-    env1.close()
-    env2.close()
+
+
 
 def get_obs_from_initial_state(x0, batch_size, steps):
     env = PseudoGym()
@@ -52,8 +34,7 @@ def get_obs_from_initial_state(x0, batch_size, steps):
     buffer = np.transpose(buffer, (1, 0, 2))
     return torch.tensor(buffer, dtype=torch.float32)
 
-    
-    
+
 def vis(xs, ts, img_path, num_samples=10):
     fig = plt.figure(figsize=(20, 9))
     gs = gridspec.GridSpec(1, 2)
@@ -63,8 +44,8 @@ def vis(xs, ts, img_path, num_samples=10):
     # Left plot: data.
     z1, z2, z3 = np.split(xs.cpu().numpy(), indices_or_sections=3, axis=-1)
     print(z1.shape)
-    [ax00.plot(z1[ :,i, 0], z2[ :,i, 0], z3[:,i, 0]) for i in range(num_samples)]
-    ax00.scatter(z1[:,:num_samples, 0], z2[:,:num_samples ,0], z3[ :,:10,0], marker='x')
+    [ax00.plot(z1[:, i, 0], z2[:, i, 0], z3[:, i, 0]) for i in range(num_samples)]
+    ax00.scatter(z1[:, :num_samples, 0], z2[:, :num_samples, 0], z3[:, :10, 0], marker='x')
     ax00.set_yticklabels([])
     ax00.set_xticklabels([])
     ax00.set_zticklabels([])
@@ -79,21 +60,35 @@ def vis(xs, ts, img_path, num_samples=10):
     plt.savefig(img_path)
     plt.close()
 
+
+def plot_action_results(X, idx=0, show=False, fname='reconstructions.png'):
+    tt = X.shape[1]
+    D = np.ceil(X.shape[2]).astype(int)
+    nrows = np.ceil(D).astype(int)
+    plt.figure(2, figsize=(20, 40))
+    for i in range(D):
+        plt.subplot(nrows, 1, i + 1)
+        plt.plot(range(0, tt), X[idx, :, i], 'r.-')
+    plt.savefig(fname)
+    if show is False:
+        plt.close()
+
+
 def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     env = gym.make(env)
-    model = SAC.load(model_file, device=device)
+    model = SAC.load(f'envs/trained_envs/{model_file}', device=device)
     data_buffer = np.array([], dtype=np.float32)
     action_buffer = np.array([], dtype=np.float32)
 
     for i in range(batch_size):
-        obs = env.reset()
+        obs, extra = env.reset()
         observations = np.array([obs], dtype=np.float32)
-        actions = np.array([],dtype=np.float32)
+        actions = np.array([], dtype=np.float32)
         for j in range(steps - 1):
             action, _states = model.predict(obs, deterministic=True)
-            obs, reward, done, info = env.step(action)
+            obs, reward, done, info, extra = env.step(action)
             observations = np.vstack((observations, obs))
-            if j == 0 :
+            if j == 0:
                 actions = np.array([action], dtype=np.float32)
             else:
                 actions = np.vstack((actions, action))
@@ -104,13 +99,20 @@ def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t
             data_buffer = np.append(data_buffer, [observations], axis=0)
             action_buffer = np.append(action_buffer, [actions], axis=0)
     ts = torch.linspace(t0, t1, steps=steps, device=device)
-    data_buffer = np.transpose(data_buffer, (1, 0, 2))
-    action_buffer = np.transpose(action_buffer, (1, 0, 2))
+    ts = ts.repeat(data_buffer.shape[0], 1)
     data_mean = data_buffer.mean(axis=0)
     for i in range(data_buffer.shape[0]):
         data_buffer[i] = data_buffer[i] - data_mean
     print(data_buffer.shape)
     return torch.tensor(data_buffer, dtype=torch.float32), ts, torch.tensor(action_buffer, dtype=torch.float32)
+
+
+def get_training_data(env, model_file, batch_size, steps, device, t0=0., t1=2., train_batch_size=8):
+    xs, ts, a = get_encoded_env_samples(env, model_file, batch_size, steps, device, t0, t1)
+    train_dataset = TensorDataset(xs, ts, a)
+    data_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True, num_workers=0)
+    return data_loader, xs.shape[-1], a.shape[-1]
+
 
 def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     env = gym.make(env)
@@ -118,12 +120,12 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     data_buffer = np.array([], dtype=np.float32)
 
     for i in range(batch_size):
-        obs = env.reset()
+        obs, extra = env.reset()
         observations = np.array([obs], dtype=np.float32)
-        actions = np.array([],dtype=np.float32)
+        actions = np.array([], dtype=np.float32)
         for j in range(steps - 1):
             action, _states = model.predict(obs, deterministic=True)
-            obs, reward, done, info = env.step(action)
+            obs, reward, done, info, extra = env.step(action)
             observations = np.vstack((observations, obs))
         if i == 0:
             data_buffer = np.array([observations])
@@ -138,13 +140,12 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     return torch.tensor(data_buffer, dtype=torch.float32), ts
 
 
-
-
 if __name__ == "__main__":
-    data_buffer, ts, actions = get_encoded_env_samples('Swimmer-v2', 'sac_swimmer', 2, 500, device)
+    data_buffer, ts, actions = get_encoded_env_samples('Hopper-v2', 'sac_hopper', 2, 500, device)
+    actions = np.transpose(actions, (1, 0, 2))
+    plot_action_results(actions, 0, False, "action-plt")
     data_buffer = np.transpose(data_buffer, (1, 0, 2))
     render_mujoco(data_buffer[1])
     print(data_buffer.shape)
 
     img_path = os.path.join("./test/", f'test.pdf')
-

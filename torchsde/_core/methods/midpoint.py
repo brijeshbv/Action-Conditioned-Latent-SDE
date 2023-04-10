@@ -14,7 +14,7 @@
 
 from .. import base_solver
 from ...settings import SDE_TYPES, NOISE_TYPES, LEVY_AREA_APPROXIMATIONS
-
+from .. import action_condn_basesdesolver
 
 class Midpoint(base_solver.BaseSDESolver):
     weak_order = 1.0

@@ -1,4 +1,4 @@
-import base_solver
+from . import base_solver
 from ..types import Scalar, Tensor, Dict, Tensors, Tuple
 import torch
 from . import adaptive_stepping
@@ -8,13 +8,16 @@ from .base_sde import BaseSDE
 from .._brownian import BaseBrownian
 from ..settings import NOISE_TYPES
 import warnings
+import torchcde
 
 
-class ActionConditionedBaseSDESolver(base_solver.BaseSDESolver):
+class ActionControlledSolver(base_solver.BaseSDESolver):
 
-    def __init__(self, sde, actions, **kwargs):
+    def __init__(self, sde, actions, action_encode_net,states, **kwargs):
         self.actions = actions
-        super(ActionConditionedBaseSDESolver, self).__init__(sde=sde, **kwargs)
+        self.states = states
+        self.action_encode_net = action_encode_net
+        super(ActionControlledSolver, self).__init__(sde=sde, **kwargs)
 
     def integrate(self, y0: Tensor, ts: Tensor, extra0: Tensors) -> Tuple[Tensor, Tensors]:
         """Integrate along trajectory.
@@ -29,17 +32,19 @@ class ActionConditionedBaseSDESolver(base_solver.BaseSDESolver):
             extra_solver_state, which is a tuple of Tensors of shape (T, ...), where ... is arbitrary and
                 solver-dependent.
         """
-        assert ts.shape == self.actions.shape, f'Shape of time horizon and actions do not match {ts.shape}{self.actions.shape}.'
+        assert ts.shape[0] == self.actions.shape[0]+1, f'Shape of time horizon and actions do not match {ts.shape}{self.actions.shape}.'
+
         step_size = self.dt
 
         prev_t = curr_t = ts[0]
-        prev_y = curr_y = y0
+        encoded_z = self.action_encode_net(torch.cat((y0, self.actions[0], self.states[0]), dim=1))
+        prev_y = curr_y = encoded_z
         curr_extra = extra0
 
-        ys = [y0]
+        ys = [encoded_z]
         prev_error_ratio = None
 
-        for out_t in ts[1:]:
+        for i, out_t in enumerate(ts[1:]):
             while curr_t < out_t:
                 next_t = min(curr_t + step_size, ts[-1])
                 if self.adaptive:
@@ -71,6 +76,11 @@ class ActionConditionedBaseSDESolver(base_solver.BaseSDESolver):
                 else:
                     prev_t, prev_y = curr_t, curr_y
                     curr_y, curr_extra = self.step(curr_t, next_t, curr_y, curr_extra)
+                    if i < len(self.actions)-1:
+                        curr_y = torch.cat((curr_y, self.actions[i+1], self.states[i+1]), dim=1)
+                    else:
+                        curr_y = torch.cat((curr_y, torch.zeros_like(self.actions[0]),torch.zeros_like(self.states[0])), dim=1)
+                    curr_y = self.action_encode_net(curr_y)
                     curr_t = next_t
             ys.append(interp.linear_interp(t0=prev_t, y0=prev_y, t1=curr_t, y1=curr_y, t=out_t))
 

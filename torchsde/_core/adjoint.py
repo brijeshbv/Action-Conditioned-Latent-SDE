@@ -147,8 +147,10 @@ def sdeint_adjoint(sde: nn.Module,
                    names: Optional[Dict[str, str]] = None,
                    logqp: bool = False,
                    extra: bool = False,
+                   actions = None,
+                   action_encode_net = None,
+                   states = None,
                    extra_solver_state: Optional[Tensors] = None,
-                   actions: Tensor = None,
                    **unused_kwargs) -> TensorOrTensors:
     """Numerically integrate an SDE with stochastic adjoint support.
 
@@ -258,29 +260,16 @@ def sdeint_adjoint(sde: nn.Module,
                               f"method={repr(method)} may not be perfectly accurate.")
 
     solver_fn = methods.select(method=method, sde_type=sde.sde_type)
-    if actions != None:
-        solver = solver_fn(
-            sde=sde,
-            actions=actions,
-            bm=bm,
-            dt=dt,
-            adaptive=adaptive,
-            rtol=rtol,
-            atol=atol,
-            dt_min=dt_min,
-            options=options
-        )
-    else:
-        solver = solver_fn(
-            sde=sde,
-            bm=bm,
-            dt=dt,
-            adaptive=adaptive,
-            rtol=rtol,
-            atol=atol,
-            dt_min=dt_min,
-            options=options
-        )
+    solver = solver_fn(
+        sde=sde,
+        bm=bm,
+        dt=dt,
+        adaptive=adaptive,
+        rtol=rtol,
+        atol=atol,
+        dt_min=dt_min,
+        options=options
+    )
     if extra_solver_state is None:
         extra_solver_state = solver.init_extra_solver_state(ts[0], y0)
 

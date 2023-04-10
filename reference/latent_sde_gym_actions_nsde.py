@@ -24,18 +24,18 @@ python -m examples.latent_sde_lorenz
 """
 import logging
 import os
-from typing import Sequence
 
 import fire
-import matplotlib.gridspec as gridspec
+from cde_utils import CDEFunc, CDEFuncPost
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torchcde
 import tqdm
 from torch import nn
 from torch import optim
 from torch.distributions import Normal
-from gym_utils import get_env_samples, get_obs_from_initial_state, get_encoded_env_samples
+from envs.gym_utils import get_encoded_env_samples
 
 import torchsde
 
@@ -72,27 +72,15 @@ class LatentSDE(nn.Module):
     sde_type = "stratonovich"
     noise_type = "diagonal"
 
-    def __init__(self, data_size, latent_size, action_size, context_size, hidden_size):
+    def __init__(self, data_size, latent_size, action_size, context_size, hidden_size, actions):
         super(LatentSDE, self).__init__()
         # Encoder.
         self.encoder = Encoder(input_size=data_size, hidden_size=hidden_size, output_size=context_size)
         self.qz0_net = nn.Linear(context_size, latent_size + latent_size)
-
+        self.actions = actions
         # Decoder.
-        self.f_net = nn.Sequential(
-            nn.Linear(latent_size + context_size, hidden_size),
-            nn.Softplus(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Softplus(),
-            nn.Linear(hidden_size, latent_size),
-        )
-        self.h_net = nn.Sequential(
-            nn.Linear(latent_size, hidden_size),
-            nn.Softplus(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Softplus(),
-            nn.Linear(hidden_size, latent_size),
-        )
+        self.func_prior = CDEFunc(latent_size, hidden_size, action_size)
+        self.func_post = CDEFuncPost(latent_size, context_size, hidden_size, action_size)
         # This needs to be an element-wise function for the SDE to satisfy diagonal noise.
         self.g_nets = nn.ModuleList(
             [
@@ -120,23 +108,33 @@ class LatentSDE(nn.Module):
     def contextualize(self, ctx):
         self._ctx = ctx  # A tuple of tensors of sizes (T,), (T, batch_size, d).
 
-    def f(self, t, y):
+    # posterior drift including f(x)*dX/dt
+    def f(self, t, z):
+        # control_gradient is of shape (..., input_channels)
+        control_gradient = self.actions.derivative(t)
         ts, ctx = self._ctx
         i = min(torch.searchsorted(ts, t, right=True), len(ts) - 1)
-        return self.f_net(torch.cat((y, ctx[i]), dim=1))
+        z_hat = torch.cat((z, ctx[i]), dim=1)
+        out = self.func_post.prod(t, z_hat, control_gradient)
+        return out
 
-    def h(self, t, y):
-        return self.h_net(y)
+    # prior including f(x)*dX/dt
+    def h(self, t, z):
+        control_gradient = self.actions.derivative(t)
+
+        out = self.func_prior.prod(t, z, control_gradient)
+        return out
 
     def g(self, t, y):  # Diagonal diffusion.
         y = torch.split(y, split_size_or_sections=1, dim=1)
         out = [g_net_i(y_i) for (g_net_i, y_i) in zip(self.g_nets, y)]
         return torch.cat(out, dim=1)
 
-    def forward(self, xs, ts, actions, noise_std, adjoint=False, method="reversible_heun"):
+    def forward(self, xs, ts, actions_est, noise_std, adjoint=False, method="reversible_heun"):
         # Contextualization is only needed for posterior inference.
-        ctx = self.encoder(torch.flip(xs, dims=(0,)))
-        ctx = torch.flip(ctx, dims=(0,))
+        ctx = self.encoder(torch.flip(xs, dims=(1,)))
+        ctx = torch.flip(ctx, dims=(1,))
+        ctx = torch.transpose(ctx, 0, 1)
         self.contextualize((ts, ctx))
 
         qz0_mean, qz0_logstd = self.qz0_net(ctx[0]).chunk(chunks=2, dim=1)
@@ -147,25 +145,24 @@ class LatentSDE(nn.Module):
             # Must use the argument `adjoint_params`, since `ctx` is not part of the input to `f`, `g`, and `h`.
             adjoint_params = (
                     (ctx,) +
-                    tuple(self.f_net.parameters()) + tuple(self.g_nets.parameters()) + tuple(self.h_net.parameters())
+                    tuple(self.func_post.parameters()) + tuple(self.g_nets.parameters()) + tuple(
+                self.func_prior.parameters())
             )
             zs, log_ratio = torchsde.sdeint_adjoint(
                 self, z0, ts, adjoint_params=adjoint_params, dt=0.2, logqp=True, method=method,
                 adjoint_method='adjoint_reversible_heun')
-            zs_concat = torch.cat((zs[:-1, :, :], actions), dim=2)
-            zs_ = self.encode_actions(zs_concat)
-            zs_ = torch.cat((zs_, zs[-1, :, :].resize(1,zs.shape[1],zs.shape[2])), dim=0)
+
         else:
             zs, log_ratio = torchsde.sdeint(self, z0, ts, dt=1e-2, logqp=True, method=method)
 
-        _xs = self.projector(zs_)
+        _xs = self.projector(zs)
+        _xs = torch.transpose(_xs, 0,1)
         xs_dist = Normal(loc=_xs, scale=noise_std)
-        log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
-
+        log_pxs = xs_dist.log_prob(xs).sum(dim=(1, 2)).mean(dim=0)
         qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
         pz0 = torch.distributions.Normal(loc=self.pz0_mean, scale=self.pz0_logstd.exp())
-        logqp0 = torch.distributions.kl_divergence(qz0, pz0).sum(dim=1).mean(dim=0)
-        logqp_path = log_ratio.sum(dim=0).mean(dim=0)
+        logqp0 = torch.distributions.kl_divergence(qz0, pz0).sum(dim=0).mean(dim=0)
+        logqp_path = log_ratio.sum(dim=1).mean(dim=0)
         return log_pxs, logqp0 + logqp_path
 
     @torch.no_grad()
@@ -173,22 +170,23 @@ class LatentSDE(nn.Module):
         eps = torch.randn(size=(batch_size, *self.pz0_mean.shape[1:]), device=self.pz0_mean.device)
         z0 = self.pz0_mean + self.pz0_logstd.exp() * eps
         zs = torchsde.sdeint(self, z0, ts, names={'drift': 'h'}, dt=0.2, bm=bm)
-        # Most of the times in ML, we don't sample the observation noise for visualization purposes.
+        zs = np.transpose(zs, (1, 0, 2))
+        # Most of the time in ML, we don't sample the observation noise for visualization purposes.
         _xs = self.projector(zs)
         return _xs
 
 
 def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
-    xs_model = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
+    xs_model = latent_sde.sample(batch_size=xs.size(0), ts=ts, bm=bm_vis).cpu().numpy()
     mse_loss = nn.MSELoss()
     with torch.no_grad():
-        xs_T = np.transpose(xs_model, (1, 0, 2))
+        # xs_T = np.transpose(xs_model, (1, 0, 2))
         # xs_true = get_obs_from_initial_state(xs_T[:, 0, :], xs_T.shape[0], xs_T.shape[1])
         # print(xs_true.shape, xs_model.shape)
-        loss = mse_loss(xs[:, 0, :], torch.tensor(xs_model[:, 0, :]))
-        xs_m_t = np.transpose(xs_model, (1, 0, 2))
-        xs_t = np.transpose(xs, (1, 0, 2))
-        plot_gym_results(xs_t, xs_m_t, 0, False, f'{train_dir}/recon_{global_step:06d}')
+        loss = mse_loss(xs[0, :, :], torch.tensor(xs_model[0, :, :]))
+        # xs_m_t = np.transpose(xs_model, (1, 0, 2))
+        # xs_t = np.transpose(xs, (1, 0, 2))
+        plot_gym_results(xs, xs_model, 0, False, f'{train_dir}/recon_{global_step:06d}')
     logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
 
 
@@ -229,12 +227,17 @@ def main(
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
     steps = 500
     xs, ts, actions = get_encoded_env_samples('Hopper-v2', 'sac_hopper', batch_size, steps, device)
+    # actions_spline = np.transpose(actions, (1, 0, 2))
+    coeffs = torchcde.natural_cubic_coeffs(actions, ts[:-1])
+    action_est = torchcde.CubicSpline(coeffs)
+
     latent_sde = LatentSDE(
         data_size=xs.shape[-1],
         action_size=actions.shape[-1],
         latent_size=latent_size,
         context_size=context_size,
         hidden_size=hidden_size,
+        actions=action_est
     ).to(device)
     optimizer = optim.Adam(params=latent_sde.parameters(), lr=lr_init)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
@@ -247,10 +250,10 @@ def main(
 
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
         latent_sde.zero_grad()
-        log_pxs, log_ratio = latent_sde(xs, ts, actions, noise_std, adjoint, method)
+        log_pxs, log_ratio = latent_sde(xs, ts, action_est, noise_std, adjoint, method)
         loss = -log_pxs + log_ratio * kl_scheduler.val
         loss.backward()
-        torch.nn.utils.clip_grad_norm(parameters=latent_sde.parameters(), max_norm=10, norm_type=2.0)
+        torch.nn.utils.clip_grad_norm(parameters=latent_sde.parameters(), max_norm=20, norm_type=2.0)
         optimizer.step()
         scheduler.step()
         kl_scheduler.step()

@@ -51,7 +51,7 @@ def load_mocap_data_many_walks(data_dir, t0=0.0, t1=2.0, dt=0.1, plot=True):
 
 if __name__ == "__main__":
     dt = 0.01
-    xs, xs_test, ts = load_mocap_data_many_walks('./', t0=0.3, t1=2, dt=0.005)
+    xs, xs_test, ts = load_mocap_data_many_walks('../', t0=0.3, t1=2, dt=0.005)
 
     num_steps = (ts - ts[0]) / dt
     print(xs.shape, xs_test.shape, ts.shape)

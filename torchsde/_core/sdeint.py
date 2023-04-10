@@ -38,6 +38,9 @@ def sdeint(sde,
            names: Optional[Dict[str, str]] = None,
            logqp: bool = False,
            extra: bool = False,
+           actions=None,
+           action_encode_net=None,
+           states=None,
            extra_solver_state: Optional[Tensors] = None,
            **unused_kwargs) -> TensorOrTensors:
     """Numerically integrate an SDE.
@@ -103,8 +106,9 @@ def sdeint(sde,
         rtol=rtol,
         atol=atol,
         dt_min=dt_min,
-        options=options
+        options=options,
     )
+
     if extra_solver_state is None:
         extra_solver_state = solver.init_extra_solver_state(ts[0], y0)
     ys, extra_solver_state = solver.integrate(y0, ts, extra_solver_state)
@@ -244,13 +248,13 @@ def check_contract(sde, y0, ts, bm, method, adaptive, options, names, logqp):
 
     for batch_size in batch_sizes[1:]:
         if batch_size != batch_sizes[0]:
-            raise ValueError("Batch sizes not consistent.")
+            raise ValueError(f'Batch sizes not consistent {batch_size}, {batch_sizes}')
     for state_size in state_sizes[1:]:
         if state_size != state_sizes[0]:
-            raise ValueError("State sizes not consistent.")
+            raise ValueError(f'State sizes not consistent, {state_size}, and {state_sizes[0]}')
     for noise_size in noise_sizes[1:]:
         if noise_size != noise_sizes[0]:
-            raise ValueError("Noise sizes not consistent.")
+            raise ValueError(f'Noise sizes not consistent.{noise_sizes}')
 
     if sde.noise_type == NOISE_TYPES.scalar:
         if noise_sizes[0] != 1:
