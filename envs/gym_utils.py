@@ -120,12 +120,12 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     data_buffer = np.array([], dtype=np.float32)
 
     for i in range(batch_size):
-        obs, extra = env.reset()
+        obs = env.reset()
         observations = np.array([obs], dtype=np.float32)
         actions = np.array([], dtype=np.float32)
         for j in range(steps - 1):
             action, _states = model.predict(obs, deterministic=True)
-            obs, reward, done, info, extra = env.step(action)
+            obs, reward, done, info = env.step(action)
             observations = np.vstack((observations, obs))
         if i == 0:
             data_buffer = np.array([observations])
