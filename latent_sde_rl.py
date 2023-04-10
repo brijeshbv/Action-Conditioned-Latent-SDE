@@ -238,7 +238,7 @@ def main(
         lr_gamma=0.997,
         num_iters=5000,
         kl_anneal_iters=400,
-        pause_every=2,
+        pause_every=50,
         noise_std=0.01,
         dt=0.2,
         adjoint=True,
