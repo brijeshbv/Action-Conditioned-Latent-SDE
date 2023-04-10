@@ -151,6 +151,11 @@ class LatentSDE(nn.Module):
         t_horizon = torch.linspace(0, 1, 10)
         for i in range(ts.shape[0] - 1):
             self.contextualize_time(i)
+            if i < ts.shape[0] - 1:
+                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
+            else:
+                latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), xs[i, :, :]), dim=1)
+            z_encoded = self.action_encode_net(latent_and_data)
             if adjoint:
                 # Must use the argument `adjoint_params`, since `ctx` is not part of the input to `f`, `g`, and `h`.
                 adjoint_params = (
@@ -159,19 +164,12 @@ class LatentSDE(nn.Module):
                     self.h_net.parameters())
                 )
                 z_pred, log_ratio = torchsde.sdeint_adjoint(
-                    self, zs[-1, :, :], t_horizon, adjoint_params=adjoint_params, dt=0.2, logqp=True, method=method,
+                    self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=0.2, logqp=True, method=method,
                     adjoint_method='adjoint_reversible_heun', action_encode_net=self.action_encode_net,
                     states=xs)
-                if i < ts.shape[0] - 1:
-                    latent_and_data = torch.cat((z_pred[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
-                else:
-                    latent_and_data = torch.cat((z_pred[-1, :, :], torch.zeros_like(actions[0]), xs[i, :, :]), dim=1)
-
-                z_encoded = self.action_encode_net(latent_and_data)
-                z_encoded = z_encoded.reshape(1, z_encoded.shape[0], z_encoded.shape[1])
-                zs = torch.cat((zs, z_encoded), dim=0)
+                zs = torch.cat((zs, z_pred[-1, :, :].reshape(1, z_pred.shape[1], z_pred.shape[2])), dim=0)
             else:
-                zs, log_ratio = torchsde.sdeint(self, z0, ts, dt=1e-2, logqp=True, method=method)
+                zs, log_ratio = torchsde.sdeint(self, z_encoded, ts, dt=1e-2, logqp=True, method=method)
 
         _xs = self.projector(zs)
         xs_dist = Normal(loc=_xs, scale=noise_std)
@@ -190,15 +188,15 @@ class LatentSDE(nn.Module):
         z0 = self.pz0_mean + self.pz0_logstd.exp() * eps
         zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
         for i in range(ts.shape[0] - 1):
-            z_pred = torchsde.sdeint(self, z0, t_horizon, dt=0.2, names={'drift': 'h'}, bm=bm, states=xs)
-            # Most of the time in ML, we don't sample the observation noise for visualization purposes.
             if i < ts.shape[0] - 1:
-                latent_and_data = torch.cat((z_pred[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
+                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
             else:
-                latent_and_data = torch.cat((z_pred[-1, :, :], torch.zeros_like(actions[0]), xs[i, :, :]), dim=1)
+                latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), xs[i, :, :]), dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
-            z_encoded = z_encoded.reshape(1, z_encoded.shape[0], z_encoded.shape[1])
-            zs = torch.cat((zs, z_encoded), dim=0)
+            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=0.2, names={'drift': 'h'}, bm=bm, states=xs)
+            # Most of the time in ML, we don't sample the observation noise for visualization purposes.
+
+            zs = torch.cat((zs, z_pred[-1, :, :].reshape(1, z_pred.shape[1], z_pred.shape[2])), dim=0)
         _xs = self.projector(zs)
         return _xs
 
@@ -240,7 +238,7 @@ def main(
         lr_gamma=0.997,
         num_iters=5000,
         kl_anneal_iters=400,
-        pause_every=50,
+        pause_every=2,
         noise_std=0.01,
         dt=0.2,
         adjoint=True,
