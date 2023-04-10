@@ -81,12 +81,12 @@ def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t
     action_buffer = np.array([], dtype=np.float32)
 
     for i in range(batch_size):
-        obs = env.reset()
+        obs, extra = env.reset()
         observations = np.array([obs], dtype=np.float32)
         actions = np.array([], dtype=np.float32)
         for j in range(steps - 1):
             action, _states = model.predict(obs, deterministic=True)
-            obs, reward, done, info = env.step(action)
+            obs, reward, done, info, extra = env.step(action)
             observations = np.vstack((observations, obs))
             if j == 0:
                 actions = np.array([action], dtype=np.float32)
@@ -107,7 +107,7 @@ def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t
     return torch.tensor(data_buffer, dtype=torch.float32), ts, torch.tensor(action_buffer, dtype=torch.float32)
 
 
-def get_training_data(env, model_file, batch_size, steps, device, t0=0., t1=2., train_batch_size=8):
+def get_training_data(env, model_file, batch_size, steps, device, t0=0., t1=2., train_batch_size=32):
     xs, ts, a = get_encoded_env_samples(env, model_file, batch_size, steps, device, t0, t1)
     train_dataset = TensorDataset(xs, ts, a)
     data_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True, num_workers=0)
