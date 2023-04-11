@@ -105,17 +105,13 @@ class LatentSDE(nn.Module):
         self.projector = nn.Sequential(
             nn.Linear(latent_size, latent_size * 2),
             nn.Tanh(),
-            nn.Linear(latent_size * 2, latent_size * 4),
+            nn.Linear(latent_size * 2, latent_size * 2),
             nn.Tanh(),
-            nn.Linear(latent_size * 4, data_size))
+            nn.Linear(latent_size * 2, data_size))
         # --- Backwards compatibility: v0.1.1. ---
         latent_and_action_size = latent_size + action_dim + data_size
         self.action_encode_net = nn.Sequential(
-            nn.Linear(latent_and_action_size, hidden_size),
-            nn.Tanh(),
-            nn.Linear(hidden_size, latent_size),
-            nn.Tanh(),
-        )
+            nn.Linear(latent_and_action_size, latent_size))
         self.pz0_mean = nn.Parameter(torch.zeros(1, latent_size))
         self.pz0_logstd = nn.Parameter(torch.zeros(1, latent_size))
 
@@ -205,13 +201,12 @@ class LatentSDE(nn.Module):
                 latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), predicted_xs[-1, :, :]),
                                             dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
-            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=0.1, names={'drift': 'h'}, bm=bm, states=xs)
+            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=0.1, names={'drift': 'h'}, bm=bm)
             # Most of the time in ML, we don't sample the observation noise for visualization purposes.
 
             xs_ = self.projector(z_pred[-1, :, :])
             xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
             predicted_xs = torch.cat((predicted_xs, xs_), dim= 0)
-
             zs = torch.cat((zs, z_pred[-1, :, :].reshape(1, z_pred.shape[1], z_pred.shape[2])), dim=0)
         return predicted_xs
 
@@ -253,7 +248,7 @@ def main(
         lr_gamma=0.997,
         num_iters=5000,
         kl_anneal_iters=400,
-        pause_every=2,
+        pause_every=50,
         noise_std=0.01,
         dt=0.2,
         adjoint=True,
@@ -262,7 +257,7 @@ def main(
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    steps = 300
+    steps = 100
     train_data, data_dim, action_dim = get_training_data('Hopper-v2', 'sac_hopper', batch_size, steps, device)
 
     latent_sde = LatentSDE(
@@ -292,7 +287,7 @@ def main(
             scheduler.step()
             kl_scheduler.step()
 
-            if global_step % pause_every == 0:
+            if global_step % pause_every == 0 or global_step == 1:
                 lr_now = optimizer.param_groups[0]['lr']
                 logging.warning(
                     f'global_step: {global_step:06d}, lr: {lr_now:.5f}, '
