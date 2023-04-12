@@ -184,7 +184,7 @@ class LatentSDE(nn.Module):
         logqp_path = log_ratio.sum(dim=0).mean(dim=0)
         return log_pxs, logqp0 + logqp_path
     @torch.no_grad()
-    def sample_fromx0(self, xs_, ts, bm=None, actions=None, xs=None):
+    def sample_fromx0(self, xs_, ts, bm=None, actions=None, xs=None, zs = None):
 
         t_horizon = torch.linspace(0, 1, 10)
         predicted_xs = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
@@ -239,7 +239,7 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
     zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
     xs_ = latent_sde.projector(zs[-1, :, :])
     xs, actions = get_obs_from_initial_state(xs_, xs.size(1), steps=100)
-    xs_model, actions = latent_sde.sample_fromx0(xs_=xs_, ts=ts, bm=bm_vis, actions=actions, xs=xs).cpu().numpy()
+    xs_model = latent_sde.sample_fromx0(xs_=xs_, ts=ts, bm=bm_vis, actions=actions, xs=xs, zs = zs).cpu().numpy()
     mse_loss = nn.MSELoss()
     with torch.no_grad():
         loss = mse_loss(xs[:, 0, :], torch.tensor(xs_model[:, 0, :]))
@@ -265,7 +265,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=32,
+        batch_size=256,
         latent_size=8,
         context_size=64,
         hidden_size=128,
@@ -305,6 +305,8 @@ def main(
             # Fix the same Brownian motion for visualization.
             bm_vis = torchsde.BrownianInterval(
                 t0=t0, t1=t1, size=(xs.shape[1], latent_size), device=device, levy_area_approximation="space-time")
+            if global_step == 1:
+                log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir)
             latent_sde.zero_grad()
             log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method, actions)
             loss = -log_pxs + log_ratio * kl_scheduler.val

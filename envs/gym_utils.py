@@ -18,7 +18,7 @@ def get_obs_from_initial_state(x0, batch_size, steps):
     buffer = np.array([], dtype=np.float32)
     action_buffer = np.array([], dtype=np.float32)
     for i in range(batch_size):
-        env.set_internal_state(x0[i])
+        env.set_internal_state(x0[i].detach().numpy())
         obs = env.get_obs()
         observations = np.array([obs], dtype=np.float32)
         actions = np.array([], dtype=np.float32)
