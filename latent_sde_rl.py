@@ -33,7 +33,7 @@ import tqdm
 from torch import nn
 from torch import optim
 from torch.distributions import Normal
-from envs.gym_utils import get_encoded_env_samples, get_training_data
+from envs.gym_utils import get_encoded_env_samples, get_training_data, get_obs_from_initial_state
 import torchsde
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
@@ -183,6 +183,28 @@ class LatentSDE(nn.Module):
         logqp0 = torch.distributions.kl_divergence(qz0, pz0).sum(dim=1).mean(dim=0)
         logqp_path = log_ratio.sum(dim=0).mean(dim=0)
         return log_pxs, logqp0 + logqp_path
+    @torch.no_grad()
+    def sample_fromx0(self, xs_, ts, bm=None, actions=None, xs=None):
+
+        t_horizon = torch.linspace(0, 1, 10)
+        predicted_xs = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
+        for i in range(ts.shape[0] - 1):
+            if i == 0:
+                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[0, :, :]), dim=1)
+            elif i < ts.shape[0] - 1:
+                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], predicted_xs[-1, :, :]), dim=1)
+            else:
+                latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), predicted_xs[-1, :, :]),
+                                            dim=1)
+            z_encoded = self.action_encode_net(latent_and_data)
+            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=0.1, names={'drift': 'h'}, bm=bm)
+            # Most of the time in ML, we don't sample the observation noise for visualization purposes.
+
+            xs_ = self.projector(z_pred[-1, :, :])
+            xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
+            predicted_xs = torch.cat((predicted_xs, xs_), dim= 0)
+            zs = torch.cat((zs, z_pred[-1, :, :].reshape(1, z_pred.shape[1], z_pred.shape[2])), dim=0)
+        return predicted_xs
 
     @torch.no_grad()
     def sample(self, batch_size, ts, bm=None, actions=None, xs=None):
@@ -211,8 +233,13 @@ class LatentSDE(nn.Module):
         return predicted_xs
 
 
-def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, actions):
-    xs_model = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis, actions=actions, xs=xs).cpu().numpy()
+def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
+    eps = torch.randn(size=(xs.size(1), *latent_sde.pz0_mean.shape[1:]), device=latent_sde.pz0_mean.device)
+    z0 = latent_sde.pz0_mean + latent_sde.pz0_logstd.exp() * eps
+    zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
+    xs_ = latent_sde.projector(zs[-1, :, :])
+    xs, actions = get_obs_from_initial_state(xs_, xs.size(1), steps=100)
+    xs_model, actions = latent_sde.sample_fromx0(xs_=xs_, ts=ts, bm=bm_vis, actions=actions, xs=xs).cpu().numpy()
     mse_loss = nn.MSELoss()
     with torch.no_grad():
         loss = mse_loss(xs[:, 0, :], torch.tensor(xs_model[:, 0, :]))
@@ -294,7 +321,7 @@ def main(
                     f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f}\n'
                 )
                 img_path = os.path.join(train_dir, f'global_step_{global_step:06d}.pdf')
-                log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, actions)
+                log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir)
 
 
 if __name__ == "__main__":

@@ -12,27 +12,34 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-
-
-
 def get_obs_from_initial_state(x0, batch_size, steps):
     env = PseudoGym()
-    model = SAC.load('sac_hopper', device=device)
+    model = SAC.load('envs/trained_envs/sac_hopper', device=device)
     buffer = np.array([], dtype=np.float32)
+    action_buffer = np.array([], dtype=np.float32)
     for i in range(batch_size):
         env.set_internal_state(x0[i])
         obs = env.get_obs()
         observations = np.array([obs], dtype=np.float32)
+        actions = np.array([], dtype=np.float32)
         for j in range(steps - 1):
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, info = env.step(action)
             observations = np.vstack((observations, obs))
+            if len(actions) == 0:
+                actions = np.array([action], dtype=np.float32)
+            else:
+                actions = np.vstack((actions, action))
         if i == 0:
             buffer = np.array([observations])
+            action_buffer = np.array([actions])
         else:
             buffer = np.append(buffer, [observations], axis=0)
+            action_buffer = np.append(action_buffer, [actions], axis=0)
+
     buffer = np.transpose(buffer, (1, 0, 2))
-    return torch.tensor(buffer, dtype=torch.float32)
+    action_buffer = np.transpose(action_buffer, (1, 0, 2))
+    return torch.tensor(buffer, dtype=torch.float32), torch.tensor(action_buffer, dtype=torch.float32 )
 
 
 def vis(xs, ts, img_path, num_samples=10):
