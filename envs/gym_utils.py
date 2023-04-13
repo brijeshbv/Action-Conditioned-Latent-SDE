@@ -19,12 +19,12 @@ def get_obs_from_initial_state(x0, batch_size, steps):
     action_buffer = np.array([], dtype=np.float32)
     for i in range(batch_size):
         env.set_internal_state(x0[i].detach().numpy())
-        obs = env.get_obs()
+        obs = compt_reset(env)
         observations = np.array([obs], dtype=np.float32)
         actions = np.array([], dtype=np.float32)
         for j in range(steps - 1):
             action, _states = model.predict(obs, deterministic=True)
-            obs, reward, done, info = env.step(action)
+            obs, reward, done, info = compt_step(env, action)
             observations = np.vstack((observations, obs))
             if len(actions) == 0:
                 actions = np.array([action], dtype=np.float32)
@@ -80,6 +80,20 @@ def plot_action_results(X, idx=0, show=False, fname='reconstructions.png'):
     if show is False:
         plt.close()
 
+def compt_reset(env):
+    obs = env.reset()
+    if type(obs) is np.ndarray:
+        return obs
+    else:
+        obs, extra = obs
+        return obs
+def compt_step(env, action):
+    op = env.step(action)
+    if len(op) == 4:
+        return op
+    else:
+        obs, reward, done, info, extra = op
+        return obs, reward, done, info
 
 def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     env = gym.make(env)
@@ -88,12 +102,12 @@ def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t
     action_buffer = np.array([], dtype=np.float32)
 
     for i in range(batch_size):
-        obs = env.reset()
+        obs = compt_reset(env)
         observations = np.array([obs], dtype=np.float32)
         actions = np.array([], dtype=np.float32)
         for j in range(steps - 1):
             action, _states = model.predict(obs, deterministic=True)
-            obs, reward, done, info = env.step(action)
+            obs, reward, done, info = compt_step(env, action)
             observations = np.vstack((observations, obs))
             if j == 0:
                 actions = np.array([action], dtype=np.float32)
