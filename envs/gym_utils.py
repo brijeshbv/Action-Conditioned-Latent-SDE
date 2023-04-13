@@ -114,7 +114,7 @@ def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t
     return torch.tensor(data_buffer, dtype=torch.float32), ts, torch.tensor(action_buffer, dtype=torch.float32)
 
 
-def get_training_data(env, model_file, batch_size, steps, device, t0=0., t1=2., train_batch_size=32):
+def get_training_data(env, model_file, batch_size, steps, device, t0=0., t1=2., train_batch_size=8):
     xs, ts, a = get_encoded_env_samples(env, model_file, batch_size, steps, device, t0, t1)
     train_dataset = TensorDataset(xs, ts, a)
     data_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True, num_workers=0)
