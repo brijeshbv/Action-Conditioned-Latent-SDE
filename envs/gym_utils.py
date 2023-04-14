@@ -39,7 +39,7 @@ def get_obs_from_initial_state(x0, batch_size, steps):
 
     buffer = np.transpose(buffer, (1, 0, 2))
     action_buffer = np.transpose(action_buffer, (1, 0, 2))
-    return torch.tensor(buffer, dtype=torch.float32), torch.tensor(action_buffer, dtype=torch.float32 )
+    return torch.tensor(buffer, dtype=torch.float32), torch.tensor(action_buffer, dtype=torch.float32)
 
 
 def vis(xs, ts, img_path, num_samples=10):
@@ -80,6 +80,7 @@ def plot_action_results(X, idx=0, show=False, fname='reconstructions.png'):
     if show is False:
         plt.close()
 
+
 def compt_reset(env):
     obs = env.reset()
     if type(obs) is np.ndarray:
@@ -87,6 +88,8 @@ def compt_reset(env):
     else:
         obs, extra = obs
         return obs
+
+
 def compt_step(env, action):
     op = env.step(action)
     if len(op) == 4:
@@ -94,6 +97,7 @@ def compt_step(env, action):
     else:
         obs, reward, done, info, extra = op
         return obs, reward, done, info
+
 
 def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     env = gym.make(env)
