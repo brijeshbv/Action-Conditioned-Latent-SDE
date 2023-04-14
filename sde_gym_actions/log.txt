@@ -494,3 +494,41 @@ INFO:root:current loss: 18.1161, global_step: 000001,
 
 INFO:root:current loss: 17.9365, global_step: 000001,
 
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -166840.4688, log_ratio: 18.5116 loss: 166840.5781, kl_coeff: 0.0071
+
+INFO:root:current loss: 19.9675, global_step: 000001,
+
+INFO:root:current loss: 29.7442, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -163277.4219, log_ratio: 20.3720 loss: 163277.5625, kl_coeff: 0.0086
+
+INFO:root:current loss: 20.3441, global_step: 000001,
+
+INFO:root:current loss: 19.1995, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -204855.4531, log_ratio: 19.7122 loss: 204855.6250, kl_coeff: 0.0100
+
+INFO:root:current loss: 20.0536, global_step: 000001,
+
+INFO:root:current loss: 19.1948, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -239731.1562, log_ratio: 11.3656 loss: 239731.2656, kl_coeff: 0.0114
+
+INFO:root:current loss: 20.2770, global_step: 000001,
+
+INFO:root:current loss: 24.1146, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -149548.7344, log_ratio: 8.4261 loss: 149548.8281, kl_coeff: 0.0129
+
+INFO:root:current loss: 19.3359, global_step: 000001,
+
+INFO:root:current loss: 18.2878, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -141222.2500, log_ratio: 8.9188 loss: 141222.2656, kl_coeff: 0.0029
+
+INFO:root:current loss: 15.1440, global_step: 000001,
+
+INFO:root:current loss: 12.2440, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -101992.8750, log_ratio: 13.4746 loss: 101992.9141, kl_coeff: 0.0043
+
