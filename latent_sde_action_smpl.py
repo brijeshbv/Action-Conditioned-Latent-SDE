@@ -275,7 +275,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=32,
+        batch_size=64,
         latent_size=8,
         context_size=64,
         hidden_size=128,
