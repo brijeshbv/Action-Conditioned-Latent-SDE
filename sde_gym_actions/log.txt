@@ -3246,3 +3246,5 @@ WARNING:root:global_step: 005000, lr: 0.00000, log_pxs: -79356.0156, log_ratio: 
 
 INFO:root:current loss: 12.7752, global_step: 005000,
 
+INFO:root:current loss: 15.4398, global_step: 000001,
+

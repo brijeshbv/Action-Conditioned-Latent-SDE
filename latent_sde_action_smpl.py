@@ -328,7 +328,7 @@ def main(
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(parameters=latent_sde.parameters(), max_norm=10, norm_type=2.0)
             optimizer.step()
-            scheduler.step()
+            #scheduler.step()
             kl_scheduler.step()
 
             if global_step % pause_every == 0 or global_step == 1:
