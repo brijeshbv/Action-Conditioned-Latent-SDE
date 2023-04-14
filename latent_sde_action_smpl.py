@@ -70,7 +70,7 @@ class LatentSDE(nn.Module):
     noise_type = "diagonal"
 
     def __init__(self, data_size, latent_size, context_size, hidden_size, action_dim, t0=0,
-                 skip_every =5,
+                 skip_every=5,
                  t1=2, dt=0.01):
         super(LatentSDE, self).__init__()
         # Encoder.
@@ -111,7 +111,6 @@ class LatentSDE(nn.Module):
             nn.Linear(latent_size, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, hidden_size),
-            nn.Tanh(),
             nn.Linear(hidden_size, data_size))
 
         latent_and_action_size = latent_size + action_dim + data_size
@@ -145,7 +144,7 @@ class LatentSDE(nn.Module):
         ctx = self.encoder(torch.flip(xs, dims=(0,)))
         ctx = torch.flip(ctx, dims=(0,))
         self.contextualize(ctx)
-        sampled_t = list(t for t in range(ts.shape[0] -1) if t % self.skip_every == 0)
+        sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
         qz0_mean, qz0_logstd = self.qz0_net(ctx[0]).chunk(chunks=2, dim=1)
         z0 = qz0_mean + qz0_logstd.exp() * torch.randn_like(qz0_mean)
         zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
@@ -288,7 +287,7 @@ def main(
         kl_anneal_iters=700,
         pause_every=50,
         noise_std=0.01,
-        skip_every= 5,
+        skip_every=5,
         dt=0.2,
         train_batch_size=8,
         adjoint=True,
