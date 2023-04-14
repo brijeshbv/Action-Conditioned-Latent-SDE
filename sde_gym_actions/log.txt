@@ -212,3 +212,51 @@ WARNING:root:global_step: 000050, lr: 0.00094, log_pxs: -3931897.5000, log_ratio
 
 INFO:root:current loss: 2.9909, global_step: 000050,
 
+INFO:root:current loss: 1.6800, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -327203.4688, log_ratio: 188.6823 loss: 327203.7500, kl_coeff: 0.0029
+
+INFO:root:current loss: 1.6468, global_step: 000001,
+
+INFO:root:current loss: 1.6007, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -232834.5625, log_ratio: 95.5539 loss: 232834.8281, kl_coeff: 0.0043
+
+INFO:root:current loss: 1.5784, global_step: 000001,
+
+INFO:root:current loss: 1.6293, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -312613.4062, log_ratio: 73.8460 loss: 312613.7188, kl_coeff: 0.0057
+
+INFO:root:current loss: 1.5572, global_step: 000001,
+
+INFO:root:current loss: 1.6039, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -212111.2188, log_ratio: 43.9205 loss: 212111.4688, kl_coeff: 0.0071
+
+INFO:root:current loss: 1.7352, global_step: 000001,
+
+INFO:root:current loss: 19.0801, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -287053.4375, log_ratio: 146.9500 loss: 287053.6562, kl_coeff: 0.0029
+
+INFO:root:current loss: 27.6530, global_step: 000001,
+
+INFO:root:current loss: 22.8818, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -184934.2344, log_ratio: 86.5368 loss: 184934.4844, kl_coeff: 0.0043
+
+INFO:root:current loss: 18.4906, global_step: 000001,
+
+INFO:root:current loss: 29.6866, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -242473.0312, log_ratio: 62.5645 loss: 242473.2969, kl_coeff: 0.0057
+
+INFO:root:current loss: 26.8702, global_step: 000001,
+
+INFO:root:current loss: 36.2326, global_step: 000001,
+
+WARNING:root:global_step: 000001, lr: 0.00100, log_pxs: -284238.5312, log_ratio: 45.0137 loss: 284238.7812, kl_coeff: 0.0071
+
+INFO:root:current loss: 21.7162, global_step: 000001,
+
