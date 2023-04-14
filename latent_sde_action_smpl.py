@@ -100,7 +100,6 @@ class LatentSDE(nn.Module):
                     nn.Linear(1, hidden_size),
                     nn.Tanh(),
                     nn.Linear(hidden_size, 1),
-                    nn.Tanh()
                 )
                 for _ in range(latent_size)
             ]
@@ -277,7 +276,7 @@ def main(
         latent_size=8,
         context_size=64,
         hidden_size=128,
-        lr_init=1e-3,
+        lr_init=1e-2,
         t0=0,
         t1=10,
         lr_gamma=0.9997,
@@ -311,7 +310,7 @@ def main(
         dt=dt,
     ).to(device)
     optimizer = optim.Adam(params=latent_sde.parameters(), lr=lr_init)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
+  #  scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
     kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
 
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
