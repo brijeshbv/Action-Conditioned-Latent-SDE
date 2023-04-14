@@ -85,14 +85,12 @@ class LatentSDE(nn.Module):
             nn.Linear(latent_size + context_size, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, hidden_size),
-            nn.Tanh(),
             nn.Linear(hidden_size, latent_size),
         )
         self.h_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, hidden_size),
-            nn.Tanh(),
             nn.Linear(hidden_size, latent_size),
         )
         # This needs to be an element-wise function for the SDE to satisfy diagonal noise.
