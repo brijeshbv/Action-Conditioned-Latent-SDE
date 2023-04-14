@@ -156,7 +156,7 @@ class LatentSDE(nn.Module):
             elif i < ts.shape[0] - 1:
                 latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
             else:
-                latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), predicted_xs[-1, :, :]),
+                latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), xs[-1, :, :]),
                                             dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
             if adjoint:
