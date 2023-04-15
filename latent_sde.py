@@ -110,11 +110,11 @@ class LatentSDE(nn.Module):
             nn.Linear(latent_size, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, hidden_size),
-            nn.Linear(hidden_size, data_size * 2),
-        )
-        latent_and_action_size = latent_size + action_dim + data_size
-        self.action_encode_net = nn.Sequential(
-            nn.Linear(latent_and_action_size, latent_size))
+            nn.Linear(hidden_size, data_size * 2))
+
+        # latent_and_action_size = latent_size + action_dim + data_size
+        # self.action_encode_net = nn.Sequential(
+        #     nn.Linear(latent_and_action_size, latent_size))
         self.pz0_mean = nn.Parameter(torch.zeros(1, latent_size))
         self.pz0_logstd = nn.Parameter(torch.zeros(1, latent_size))
 
@@ -152,44 +152,45 @@ class LatentSDE(nn.Module):
         zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
 
         xs_mean, xs_noise = self.projector(zs[-1, :, :]).chunk(chunks=2, dim=1)
-
+        # xs_noise = self.noise_net(xs_).exp()
+        # xs_mean = self.mean_net(xs_)
         predicted_noise = xs_noise.exp().reshape(1, xs_noise.shape[0], xs_noise.shape[1])
         predicted_xs = xs_mean.reshape(1, xs_mean.shape[0], xs_mean.shape[1])
         for i in sampled_t:
             self.contextualize_time(i)
-            if i == 0:
-                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[0, :, :]), dim=1)
-            elif i < ts.shape[0] - 1:
-                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
-            else:
-                latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), xs[-1, :, :]),
-                                            dim=1)
-            z_encoded = self.action_encode_net(latent_and_data)
+            # if i == 0:
+            #     latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[0, :, :]), dim=1)
+            # elif i < ts.shape[0] - 1:
+            #     latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
+            # else:
+            #     latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), xs[-1, :, :]),
+            #                                 dim=1)
+            # z_encoded = self.action_encode_net(latent_and_data)
             t_horizon = ts_horizon[0][i: i + self.skip_every]
             if adjoint:
                 # Must use the argument `adjoint_params`, since `ctx` is not part of the input to `f`, `g`, and `h`.
                 adjoint_params = (
                         (ctx,) +
                         tuple(self.f_net.parameters()) + tuple(self.g_nets.parameters()) + tuple(
-                    self.h_net.parameters()) + tuple(self.action_encode_net.parameters()))
+                    self.h_net.parameters()))
                 z_pred, log_ratio = torchsde.sdeint_adjoint(
-                    self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
+                    self, zs[-1, :, :], t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
                     adjoint_method='adjoint_reversible_heun')
+                xs_mean, xs_n = self.projector(z_pred).chunk(chunks=2, dim=2)
+                if i == 0:
+                    predicted_xs = xs_mean
+                    predicted_noise = xs_n.exp()
+                else:
+                    # xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
+                    predicted_xs = torch.cat((predicted_xs, xs_mean), dim=0)
+                    predicted_noise = torch.cat((predicted_noise, xs_n.exp()), dim=0)
+                zs = torch.cat((zs, z_pred), dim=0)
+                if i == 0:
+                    cum_log_ratio = log_ratio
+                else:
+                    cum_log_ratio = torch.cat((cum_log_ratio, log_ratio), dim=0)
             else:
-                z_pred, log_ratio = torchsde.sdeint(self, z_encoded, ts, dt=1e-2, logqp=True, method=method)
-            xs_mean, xs_n = self.projector(z_pred).chunk(chunks=2, dim=1)
-            if i == 0:
-                predicted_xs = xs_mean
-                predicted_noise = xs_n.exp()
-            else:
-                # xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
-                predicted_xs = torch.cat((predicted_xs, xs_mean), dim=0)
-                predicted_noise = torch.cat((predicted_noise, xs_n.exp()), dim=0)
-            zs = torch.cat((zs, z_pred), dim=0)
-            if i == 0:
-                cum_log_ratio = log_ratio
-            else:
-                cum_log_ratio = torch.cat((cum_log_ratio, log_ratio), dim=0)
+                zs, log_ratio = torchsde.sdeint(self, zs[-1, :, :], ts, dt=1e-2, logqp=True, method=method)
         xs_dist = Normal(loc=predicted_xs, scale=predicted_noise)
         log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
 
@@ -206,18 +207,20 @@ class LatentSDE(nn.Module):
         sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
         for i in sampled_t:
             t_horizon = ts_horizon[0][i: i + self.skip_every]
-            if i == 0:
-                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], x0), dim=1)
-            elif i < ts.shape[0] - 1:
-                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], predicted_xs[-1, :, :]), dim=1)
-            else:
-                latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), predicted_xs[-1, :, :]),
-                                            dim=1)
-            z_encoded = self.action_encode_net(latent_and_data)
-            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm, method="reversible_heun")
+            # if i == 0:
+            #     latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], x0), dim=1)
+            # elif i < ts.shape[0] - 1:
+            #     latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], predicted_xs[-1, :, :]), dim=1)
+            # else:
+            #     latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), predicted_xs[-1, :, :]),
+            #                                 dim=1)
+            # z_encoded = self.action_encode_net(latent_and_data)
+            z_pred = torchsde.sdeint(self, zs[-1, :, :], t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm, method="reversible_heun")
             # Most of the time in ML, we don't sample the observation noise for visualization purposes.
 
-            xs_hat, x0_noise = self.projector(z_pred).chunk(chunks=2, dim=1)
+            xs_hat, x0_noise = self.projector(z_pred).chunk(chunks=2, dim=2)
+            # x0_noise = self.noise_net(xs_hat)
+            # xs_hat = self.mean_net(xs_hat)
             # + x0_noise.exp() * torch.randn_like(x0_noise)
             if i == 0:
                 zs = z_pred
@@ -260,7 +263,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=256,
+        batch_size=64,
         latent_size=8,
         context_size=64,
         hidden_size=128,
@@ -275,7 +278,7 @@ def main(
         skip_every=2,
         dt=0.2,
         train_batch_size=32,
-        adjoint=False,
+        adjoint=True,
         train_dir='./dump/lorenz/',
         method="reversible_heun",
 ):
