@@ -176,8 +176,8 @@ class LatentSDE(nn.Module):
                     self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
                     adjoint_method='adjoint_reversible_heun')
             else:
-                z_pred, log_ratio = torchsde.sdeint(self, z_encoded, ts, dt=1e-2, logqp=True, method=method)
-            xs_mean, xs_n = self.projector(z_pred).chunk(chunks=2, dim=1)
+                z_pred, log_ratio = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, logqp=True, method=method)
+            xs_mean, xs_n = self.projector(z_pred).chunk(chunks=2, dim=2)
             if i == 0:
                 predicted_xs = xs_mean
                 predicted_noise = xs_n.exp()
@@ -217,7 +217,7 @@ class LatentSDE(nn.Module):
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm, method="reversible_heun")
             # Most of the time in ML, we don't sample the observation noise for visualization purposes.
 
-            xs_hat, x0_noise = self.projector(z_pred).chunk(chunks=2, dim=1)
+            xs_hat, x0_noise = self.projector(z_pred).chunk(chunks=2, dim=2)
             # + x0_noise.exp() * torch.randn_like(x0_noise)
             if i == 0:
                 zs = z_pred
@@ -260,7 +260,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=256,
+        batch_size=128,
         latent_size=8,
         context_size=64,
         hidden_size=128,
