@@ -297,7 +297,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=64,
+        batch_size=256,
         latent_size=8,
         context_size=64,
         hidden_size=128,
@@ -309,9 +309,9 @@ def main(
         kl_anneal_iters=700,
         pause_every=50,
         noise_std=0.01,
-        skip_every=5,
+        skip_every=2,
         dt=0.2,
-        train_batch_size=8,
+        train_batch_size=32,
         adjoint=True,
         train_dir='./dump/lorenz/',
         method="reversible_heun",
