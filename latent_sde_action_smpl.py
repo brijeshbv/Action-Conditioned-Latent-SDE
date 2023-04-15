@@ -93,6 +93,7 @@ class LatentSDE(nn.Module):
             nn.Linear(hidden_size, hidden_size),
             nn.Linear(hidden_size, latent_size),
         )
+
         # This needs to be an element-wise function for the SDE to satisfy diagonal noise.
         self.g_nets = nn.ModuleList(
             [
@@ -104,12 +105,18 @@ class LatentSDE(nn.Module):
                 for _ in range(latent_size)
             ]
         )
+
         self.projector = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
             nn.Tanh(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Linear(hidden_size, data_size))
-
+            nn.Linear(hidden_size, hidden_size))
+        self.mean_net = nn.Sequential(
+            nn.Linear(hidden_size, data_size),
+        )
+        self.noise_net = nn.Sequential(
+            nn.Linear(hidden_size, data_size),
+            nn.Softplus(),
+        )
         latent_and_action_size = latent_size + action_dim + data_size
         self.action_encode_net = nn.Sequential(
             nn.Linear(latent_and_action_size, latent_size))
@@ -147,7 +154,10 @@ class LatentSDE(nn.Module):
         zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
         t_horizon = torch.linspace(self.t0, self.t1, self.skip_every)
         xs_ = self.projector(zs[-1, :, :])
-        predicted_xs = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
+        xs_noise = self.noise_net(xs_).exp()
+        xs_mean = self.mean_net(xs_)
+        predicted_noise = xs_noise.reshape(1, xs_noise.shape[0], xs_noise.shape[1])
+        predicted_xs = xs_mean.reshape(1, xs_mean.shape[0], xs_mean.shape[1])
 
         for i in sampled_t:
             self.contextualize_time(i)
@@ -171,8 +181,12 @@ class LatentSDE(nn.Module):
                     adjoint_method='adjoint_reversible_heun', action_encode_net=self.action_encode_net,
                     states=xs)
                 xs_ = self.projector(z_pred)
+                xs_mean = self.mean_net(xs_)
+                xs_n = self.noise_net(xs_)
+
                 # xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
-                predicted_xs = torch.cat((predicted_xs, xs_), dim=0)
+                predicted_xs = torch.cat((predicted_xs, xs_mean), dim=0)
+                predicted_noise = torch.cat((predicted_noise,xs_n), dim=0)
                 zs = torch.cat((zs, z_pred), dim=0)
                 if i == 0:
                     cum_log_ratio = log_ratio
@@ -181,7 +195,8 @@ class LatentSDE(nn.Module):
             else:
                 zs, log_ratio = torchsde.sdeint(self, z_encoded, ts, dt=1e-2, logqp=True, method=method)
         predicted_xs = predicted_xs[:-1, :, :]
-        xs_dist = Normal(loc=predicted_xs, scale=noise_std)
+        predicted_noise = predicted_noise[:-1, :, :]
+        xs_dist = Normal(loc=predicted_xs, scale=predicted_noise)
         log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
 
         qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
@@ -193,9 +208,10 @@ class LatentSDE(nn.Module):
     @torch.no_grad()
     def sample_fromx0(self, x0, ts, bm=None, actions=None, zs=None):
 
-        t_horizon = torch.linspace(self.t0, self.t1, 10)
+        t_horizon = torch.linspace(self.t0, self.t1, self.skip_every)
         predicted_xs = x0.reshape(1, x0.shape[0], x0.shape[1])
-        for i in range(ts.shape[0] - 1):
+        sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
+        for i in sampled_t:
             if i == 0:
                 latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], x0), dim=1)
             elif i < ts.shape[0] - 1:
@@ -207,10 +223,13 @@ class LatentSDE(nn.Module):
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm)
             # Most of the time in ML, we don't sample the observation noise for visualization purposes.
 
-            x0 = self.projector(z_pred[-1, :, :])
-            x0 = x0.reshape(1, x0.shape[0], x0.shape[1])
+            x0 = self.projector(z_pred)
+            x0_noise = self.noise_net(x0)
+            x0 = self.mean_net(x0)
+            #+ x0_noise.exp() * torch.randn_like(x0_noise)
             predicted_xs = torch.cat((predicted_xs, x0), dim=0)
             zs = torch.cat((zs, z_pred[-1, :, :].reshape(1, z_pred.shape[1], z_pred.shape[2])), dim=0)
+        predicted_xs = predicted_xs[:-1, :, :]
         return predicted_xs
 
     @torch.no_grad()
@@ -245,6 +264,7 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps):
     z0 = latent_sde.pz0_mean + latent_sde.pz0_logstd.exp() * eps
     z0 = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
     x0 = latent_sde.projector(z0[-1, :, :])
+    x0 = latent_sde.mean_net(x0)
     xs, actions = get_obs_from_initial_state(x0, xs.size(1), steps=steps)
     xs_model = latent_sde.sample_fromx0(x0=x0, ts=ts, bm=bm_vis, actions=actions, zs=z0).cpu().numpy()
     mse_loss = nn.MSELoss()
@@ -276,7 +296,7 @@ def main(
         latent_size=8,
         context_size=64,
         hidden_size=128,
-        lr_init=1e-2,
+        lr_init=1e-3,
         t0=0,
         t1=10,
         lr_gamma=0.9997,
