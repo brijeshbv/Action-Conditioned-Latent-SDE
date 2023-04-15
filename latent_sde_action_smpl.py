@@ -260,7 +260,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=128,
+        batch_size=16,
         latent_size=8,
         context_size=64,
         hidden_size=128,
@@ -274,14 +274,14 @@ def main(
         noise_std=0.01,
         skip_every=2,
         dt=0.2,
-        train_batch_size=32,
+        train_batch_size=8,
         adjoint=False,
         train_dir='./dump/lorenz/',
         method="reversible_heun",
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    steps = 50
+    steps = 100
     dt = (t1 - t0) / 100
     train_data, data_dim, action_dim = get_training_data('Hopper-v2', 'sac_hopper', batch_size, steps, device, t0, t1,
                                                          train_batch_size=train_batch_size)

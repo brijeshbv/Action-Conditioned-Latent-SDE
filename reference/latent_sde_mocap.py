@@ -194,7 +194,7 @@ def plot_cmu_mocap_recs(X, Xrec, idx=0, show=False, fname='reconstructions.png')
     for i in range(D):
         plt.subplot(nrows, 5, i + 1)
         plt.plot(range(0, tt), X[idx, :, i], 'r.')
-        plt.plot(range(lag, tt), Xrec[idx, :, i], 'b.-')
+        plt.plot(range(lag, tt), Xrec[idx, :, i], 'b.')
     plt.savefig(fname)
     if show is False:
         plt.close()
@@ -220,7 +220,7 @@ def main(
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    xs, xs_test, ts = load_mocap_data_many_walks('../', t0, t1, dt)
+    xs, xs_test, ts = load_mocap_data_many_walks('./reference/', t0, t1, dt)
     latent_sde = LatentSDE(
         data_size=xs.shape[-1],
         latent_size=latent_size,
@@ -241,7 +241,7 @@ def main(
         log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method)
         loss = -log_pxs + log_ratio * kl_scheduler.val
         loss.backward()
-        torch.nn.utils.clip_grad_norm(parameters=latent_sde.parameters(), max_norm=10, norm_type=2.0)
+        torch.nn.utils.clip_grad_norm_(parameters=latent_sde.parameters(), max_norm=10, norm_type=2.0)
         optimizer.step()
         scheduler.step()
         kl_scheduler.step()

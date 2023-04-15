@@ -5,6 +5,7 @@ import torch
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 
+
 def vis(xs, ts, img_path, num_samples=10):
     fig = plt.figure(figsize=(20, 9))
     gs = gridspec.GridSpec(1, 2)
@@ -14,8 +15,8 @@ def vis(xs, ts, img_path, num_samples=10):
     # Left plot: data.
     z1, z2, z3 = np.split(xs.cpu().numpy(), indices_or_sections=3, axis=-1)
     print(z1.shape)
-    [ax00.plot(z1[ :,i, 0], z2[ :,i, 0], z3[:,i, 0]) for i in range(num_samples)]
-    ax00.scatter(z1[:,:num_samples, 0], z2[:,:num_samples ,0], z3[ :,:10,0], marker='x')
+    [ax00.plot(z1[:, i, 0], z2[:, i, 0], z3[:, i, 0]) for i in range(num_samples)]
+    ax00.scatter(z1[:, :num_samples, 0], z2[:, :num_samples, 0], z3[:, :10, 0], marker='x')
     ax00.set_yticklabels([])
     ax00.set_xticklabels([])
     ax00.set_zticklabels([])
@@ -29,6 +30,8 @@ def vis(xs, ts, img_path, num_samples=10):
 
     plt.savefig(img_path)
     plt.close()
+
+
 def load_mocap_data_many_walks(data_dir, t0=0.0, t1=2.0, dt=0.1, plot=True):
     from scipy.io import loadmat
     fname = os.path.join(data_dir, 'mocap35.mat')
@@ -45,6 +48,8 @@ def load_mocap_data_many_walks(data_dir, t0=0.0, t1=2.0, dt=0.1, plot=True):
     Ytr = np.tile(Ytr, [Xtr.shape[0], 1])
     Xtr = np.transpose(Xtr, (1, 0, 2))
     Xtest = np.transpose(Xtest, (1, 0, 2))
+    Xtr = Xtr[:50,:,:]
+    Xtest = Xtest[:50, :, :]
     ts = torch.linspace(t0, t1, steps=Xtr.shape[0])
     return torch.tensor(Xtr, dtype=torch.float32), torch.tensor(Xtest, dtype=torch.float32), ts
 
