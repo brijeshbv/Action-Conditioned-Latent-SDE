@@ -137,7 +137,8 @@ class LatentSDE(nn.Module):
         return self.f_net(torch.cat((y, ctx[i]), dim=1))
 
     def h(self, t, y):
-        return self.h_net(y)
+        out = self.h_net(y)
+        return out
 
     def g(self, t, y):  # Diagonal diffusion.
         y = torch.split(y, split_size_or_sections=1, dim=1)
@@ -208,11 +209,11 @@ class LatentSDE(nn.Module):
 
     @torch.no_grad()
     def sample_fromx0(self, x0, ts, bm=None, actions=None, zs=None):
-
-        t_horizon = torch.linspace(self.t0, self.t1, self.skip_every)
+        ts_horizon = torch.permute(ts, (1, 0))
         predicted_xs = x0.reshape(1, x0.shape[0], x0.shape[1])
         sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
         for i in sampled_t:
+            t_horizon = ts_horizon[0][i: i + self.skip_every]
             if i == 0:
                 latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], x0), dim=1)
             elif i < ts.shape[0] - 1:
@@ -221,7 +222,7 @@ class LatentSDE(nn.Module):
                 latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), predicted_xs[-1, :, :]),
                                             dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
-            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm)
+            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm, method="reversible_heun")
             # Most of the time in ML, we don't sample the observation noise for visualization purposes.
 
             xs_hat = self.projector(z_pred)
