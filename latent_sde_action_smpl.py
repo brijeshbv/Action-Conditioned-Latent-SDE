@@ -132,8 +132,9 @@ class LatentSDE(nn.Module):
         self.ti = i
 
     def f(self, t, y):
-        ctx = self._ctx
-        return self.f_net(torch.cat((y, ctx[self.ti]), dim=1))
+        ctx, ts = self._ctx
+        i = min(torch.searchsorted(ts, t, right=True), len(ts) - 1)
+        return self.f_net(torch.cat((y, ctx[i]), dim=1))
 
     def h(self, t, y):
         return self.h_net(y)
@@ -147,12 +148,13 @@ class LatentSDE(nn.Module):
         # Contextualization is only needed for posterior inference.
         ctx = self.encoder(torch.flip(xs, dims=(0,)))
         ctx = torch.flip(ctx, dims=(0,))
-        self.contextualize(ctx)
+        ts_horizon = torch.permute(ts, (1, 0))
+        self.contextualize((ctx, ts_horizon[0]))
         sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
         qz0_mean, qz0_logstd = self.qz0_net(ctx[0]).chunk(chunks=2, dim=1)
         z0 = qz0_mean + qz0_logstd.exp() * torch.randn_like(qz0_mean)
         zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
-        t_horizon = torch.linspace(self.t0, self.t1, self.skip_every)
+
         xs_ = self.projector(zs[-1, :, :])
         xs_noise = self.noise_net(xs_).exp()
         xs_mean = self.mean_net(xs_)
@@ -168,6 +170,7 @@ class LatentSDE(nn.Module):
                 latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), xs[-1, :, :]),
                                             dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
+            t_horizon = ts_horizon[0][i: i + self.skip_every]
             if adjoint:
                 # Must use the argument `adjoint_params`, since `ctx` is not part of the input to `f`, `g`, and `h`.
                 adjoint_params = (
