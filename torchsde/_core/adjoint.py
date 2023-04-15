@@ -147,9 +147,6 @@ def sdeint_adjoint(sde: nn.Module,
                    names: Optional[Dict[str, str]] = None,
                    logqp: bool = False,
                    extra: bool = False,
-                   actions = None,
-                   action_encode_net = None,
-                   states = None,
                    extra_solver_state: Optional[Tensors] = None,
                    **unused_kwargs) -> TensorOrTensors:
     """Numerically integrate an SDE with stochastic adjoint support.

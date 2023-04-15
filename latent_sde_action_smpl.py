@@ -158,13 +158,12 @@ class LatentSDE(nn.Module):
         xs_mean = self.mean_net(xs_)
         predicted_noise = xs_noise.reshape(1, xs_noise.shape[0], xs_noise.shape[1])
         predicted_xs = xs_mean.reshape(1, xs_mean.shape[0], xs_mean.shape[1])
-
         for i in sampled_t:
             self.contextualize_time(i)
             if i == 0:
                 latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[0, :, :]), dim=1)
             elif i < ts.shape[0] - 1:
-                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[-1, :, :]), dim=1)
+                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
             else:
                 latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), xs[-1, :, :]),
                                             dim=1)
@@ -174,19 +173,20 @@ class LatentSDE(nn.Module):
                 adjoint_params = (
                         (ctx,) +
                         tuple(self.f_net.parameters()) + tuple(self.g_nets.parameters()) + tuple(
-                    self.h_net.parameters())
-                )
+                    self.h_net.parameters()) + tuple(self.action_encode_net.parameters()))
                 z_pred, log_ratio = torchsde.sdeint_adjoint(
                     self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
-                    adjoint_method='adjoint_reversible_heun', action_encode_net=self.action_encode_net,
-                    states=xs)
+                    adjoint_method='adjoint_reversible_heun')
                 xs_ = self.projector(z_pred)
                 xs_mean = self.mean_net(xs_)
                 xs_n = self.noise_net(xs_)
-
-                # xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
-                predicted_xs = torch.cat((predicted_xs, xs_mean), dim=0)
-                predicted_noise = torch.cat((predicted_noise,xs_n), dim=0)
+                if i == 0:
+                    predicted_xs = xs_mean
+                    predicted_noise = xs_n
+                else:
+                    # xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
+                    predicted_xs = torch.cat((predicted_xs, xs_mean), dim=0)
+                    predicted_noise = torch.cat((predicted_noise, xs_n), dim=0)
                 zs = torch.cat((zs, z_pred), dim=0)
                 if i == 0:
                     cum_log_ratio = log_ratio
@@ -194,8 +194,6 @@ class LatentSDE(nn.Module):
                     cum_log_ratio = torch.cat((cum_log_ratio, log_ratio), dim=0)
             else:
                 zs, log_ratio = torchsde.sdeint(self, z_encoded, ts, dt=1e-2, logqp=True, method=method)
-        predicted_xs = predicted_xs[:-1, :, :]
-        predicted_noise = predicted_noise[:-1, :, :]
         xs_dist = Normal(loc=predicted_xs, scale=predicted_noise)
         log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
 
@@ -223,13 +221,16 @@ class LatentSDE(nn.Module):
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm)
             # Most of the time in ML, we don't sample the observation noise for visualization purposes.
 
-            x0 = self.projector(z_pred)
-            x0_noise = self.noise_net(x0)
-            x0 = self.mean_net(x0)
-            #+ x0_noise.exp() * torch.randn_like(x0_noise)
-            predicted_xs = torch.cat((predicted_xs, x0), dim=0)
-            zs = torch.cat((zs, z_pred[-1, :, :].reshape(1, z_pred.shape[1], z_pred.shape[2])), dim=0)
-        predicted_xs = predicted_xs[:-1, :, :]
+            xs_hat = self.projector(z_pred)
+            x0_noise = self.noise_net(xs_hat)
+            xs_hat = self.mean_net(xs_hat)
+            # + x0_noise.exp() * torch.randn_like(x0_noise)
+            if i == 0:
+                zs = z_pred
+                predicted_xs = xs_hat
+            else:
+                predicted_xs = torch.cat((predicted_xs, xs_hat), dim=0)
+                zs = torch.cat((zs, z_pred), dim=0)
         return predicted_xs
 
     @torch.no_grad()
@@ -330,7 +331,7 @@ def main(
         dt=dt,
     ).to(device)
     optimizer = optim.Adam(params=latent_sde.parameters(), lr=lr_init)
-  #  scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
+    #  scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
     kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
 
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
@@ -348,7 +349,7 @@ def main(
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(parameters=latent_sde.parameters(), max_norm=10, norm_type=2.0)
             optimizer.step()
-            #scheduler.step()
+            # scheduler.step()
             kl_scheduler.step()
 
             if global_step % pause_every == 0 or global_step == 1:
