@@ -113,7 +113,7 @@ class LatentSDE(nn.Module):
             nn.Softplus(),
             nn.Linear(hidden_size, hidden_size),
             nn.Softplus(),
-            nn.Linear(hidden_size, data_size * 2),
+            nn.Linear(hidden_size, data_size),
         )
         latent_and_action_size = latent_size + action_dim + data_size
         self.action_encode_net = nn.Sequential(
@@ -154,9 +154,7 @@ class LatentSDE(nn.Module):
         z0 = qz0_mean + qz0_logstd.exp() * torch.randn_like(qz0_mean)
         zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
 
-        xs_mean, xs_noise = self.projector(zs[-1, :, :]).chunk(chunks=2, dim=1)
-
-        predicted_noise = xs_noise.exp().reshape(1, xs_noise.shape[0], xs_noise.shape[1])
+        xs_mean = self.projector(zs[-1, :, :])
         predicted_xs = xs_mean.reshape(1, xs_mean.shape[0], xs_mean.shape[1])
         for i in sampled_t:
             self.contextualize_time(i)
@@ -180,20 +178,18 @@ class LatentSDE(nn.Module):
                     adjoint_method='adjoint_reversible_heun')
             else:
                 z_pred, log_ratio = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, logqp=True, method=method)
-            xs_mean, xs_n = self.projector(z_pred).chunk(chunks=2, dim=2)
+            xs_mean = self.projector(z_pred)
             if i == 0:
                 predicted_xs = xs_mean
-                predicted_noise = xs_n.exp()
             else:
                 # xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
                 predicted_xs = torch.cat((predicted_xs, xs_mean), dim=0)
-                predicted_noise = torch.cat((predicted_noise, xs_n.exp()), dim=0)
             zs = torch.cat((zs, z_pred), dim=0)
             if i == 0:
                 cum_log_ratio = log_ratio
             else:
                 cum_log_ratio = torch.cat((cum_log_ratio, log_ratio), dim=0)
-        xs_dist = Normal(loc=predicted_xs, scale=predicted_noise)
+        xs_dist = Normal(loc=predicted_xs, scale=noise_std)
         log_pxs = xs_dist.log_prob(xs).sum(dim=(0, 2)).mean(dim=0)
 
         qz0 = torch.distributions.Normal(loc=qz0_mean, scale=qz0_logstd.exp())
@@ -220,7 +216,7 @@ class LatentSDE(nn.Module):
             z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm, method="reversible_heun")
             # Most of the time in ML, we don't sample the observation noise for visualization purposes.
 
-            xs_hat, x0_noise = self.projector(z_pred).chunk(chunks=2, dim=2)
+            xs_hat = self.projector(z_pred)
             # + x0_noise.exp() * torch.randn_like(x0_noise)
             if i == 0:
                 zs = z_pred
@@ -235,7 +231,7 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps):
     eps = torch.randn(size=(xs.size(1), *latent_sde.pz0_mean.shape[1:]), device=latent_sde.pz0_mean.device)
     z0 = latent_sde.pz0_mean + latent_sde.pz0_logstd.exp() * eps
     z0 = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
-    x0, noise = latent_sde.projector(z0[-1, :, :]).chunk(chunks=2, dim=1)
+    x0 = latent_sde.projector(z0[-1, :, :])
     xs, actions = get_obs_from_initial_state(x0, xs.size(1), steps=steps)
     xs_model = latent_sde.sample_fromx0(x0=x0, ts=ts, bm=bm_vis, actions=actions, zs=z0).cpu().numpy()
     mse_loss = nn.MSELoss()
@@ -263,7 +259,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=128,
+        batch_size=32,
         latent_size=8,
         context_size=64,
         hidden_size=128,
@@ -275,7 +271,7 @@ def main(
         kl_anneal_iters=700,
         pause_every=50,
         noise_std=0.01,
-        skip_every=5,
+        skip_every=2,
         dt=0.2,
         train_batch_size=16,
         adjoint=True,
@@ -284,8 +280,8 @@ def main(
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    steps = 300
-    dt = (t1 - t0) / 100
+    steps = 100
+    dt = (t1 - t0) / 50
     train_data, data_dim, action_dim = get_training_data('Hopper-v2', 'sac_hopper', batch_size, steps, device, t0, t1,
                                                          train_batch_size=train_batch_size)
 
@@ -301,7 +297,7 @@ def main(
         dt=dt,
     ).to(device)
     optimizer = optim.Adam(params=latent_sde.parameters(), lr=lr_init)
-    #  scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
     kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
 
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
@@ -319,7 +315,7 @@ def main(
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(parameters=latent_sde.parameters(), max_norm=10, norm_type=2.0)
             optimizer.step()
-            # scheduler.step()
+            scheduler.step()
             kl_scheduler.step()
 
             if global_step % pause_every == 0 or global_step == 1:

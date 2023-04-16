@@ -101,13 +101,15 @@ def compt_step(env, action):
         return obs, reward, done, info
 
 
-def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
+def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2., reset_data=True):
     env = gym.make(env)
     model = SAC.load(f'envs/trained_envs/{model_file}', device=device)
     data_buffer = np.array([], dtype=np.float32)
     action_buffer = np.array([], dtype=np.float32)
     obs = compt_reset(env)
     for i in range(batch_size):
+        if reset_data:
+            obs = compt_reset(env)
         observations = np.array([obs], dtype=np.float32)
         actions = np.array([], dtype=np.float32)
         for j in range(steps - 1):
@@ -128,13 +130,13 @@ def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t
     ts = ts.repeat(data_buffer.shape[0], 1)
     data_mean = data_buffer.mean(axis=1)
     for i in range(data_buffer.shape[1]):
-        data_buffer[:,i,:] = data_buffer[:,i,:] - data_mean
+        data_buffer[:, i, :] = data_buffer[:, i, :] - data_mean
     print(data_buffer.shape)
     return torch.tensor(data_buffer, dtype=torch.float32), ts, torch.tensor(action_buffer, dtype=torch.float32)
 
 
-def get_training_data(env, model_file, batch_size, steps, device, t0=0., t1=2., train_batch_size=8):
-    xs, ts, a = get_encoded_env_samples(env, model_file, batch_size, steps, device, t0, t1)
+def get_training_data(env, model_file, batch_size, steps, device, t0=0., t1=2., train_batch_size=8, reset_data=True):
+    xs, ts, a = get_encoded_env_samples(env, model_file, batch_size, steps, device, t0, t1, reset_data)
     train_dataset = TensorDataset(xs, ts, a)
     data_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True, num_workers=0)
     return data_loader, xs.shape[-1], a.shape[-1]
@@ -165,6 +167,7 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     print(data_buffer.shape)
     return torch.tensor(data_buffer, dtype=torch.float32), ts
 
+
 def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
     tt = X.shape[1]
     D = np.ceil(X.shape[2]).astype(int)
@@ -178,9 +181,9 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
     if show is False:
         plt.close()
 
+
 if __name__ == "__main__":
-    data_buffer, ts, actions = get_encoded_env_samples('Hopper-v2', 'sac_hopper', 16, 50, device)
+    data_buffer, ts, actions = get_encoded_env_samples('Hopper-v2', 'sac_hopper', 16, 300, device)
 
     for i in range(10):
         plot_gym_results(data_buffer, None, i, True, "hopper-data")
-

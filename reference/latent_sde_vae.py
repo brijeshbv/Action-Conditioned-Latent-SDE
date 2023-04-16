@@ -34,7 +34,7 @@ import tqdm
 from torch import nn
 from torch import optim
 from torch.distributions import Normal
-from envs.gym_utils import get_env_samples
+from envs.gym_utils import get_env_samples, get_training_data
 import torchsde
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -169,61 +169,33 @@ class LatentSDE(nn.Module):
 
 
 
-def vis(xs, ts, latent_sde, bm_vis, img_path, num_samples=10):
-    fig = plt.figure(figsize=(20, 9))
-    gs = gridspec.GridSpec(1, 2)
-    ax00 = fig.add_subplot(gs[0, 0], projection='3d')
-    ax01 = fig.add_subplot(gs[0, 1], projection='3d')
-    xs = torch.hstack((xs[:,:,0],xs[:,:,8],xs[:,:,9]))
-    print(xs.shape)
-    # Left plot: data.
-    z1, z2, z3 = np.split(xs.cpu().numpy(), indices_or_sections=3, axis=-1)
-    [ax00.plot(z1[:, i, 0], z2[:, i, 0], z3[:, i, 0]) for i in range(num_samples)]
-    ax00.scatter(z1[0, :num_samples, 0], z2[0, :num_samples, 0], z3[0, :10, 0], marker='x')
-    ax00.set_yticklabels([])
-    ax00.set_xticklabels([])
-    ax00.set_zticklabels([])
-    ax00.set_xlabel('$z_1$', labelpad=0., fontsize=16)
-    ax00.set_ylabel('$z_2$', labelpad=.5, fontsize=16)
-    ax00.set_zlabel('$z_3$', labelpad=0., horizontalalignment='center', fontsize=16)
-    ax00.set_title('Data', fontsize=20)
-    xlim = ax00.get_xlim()
-    ylim = ax00.get_ylim()
-    zlim = ax00.get_zlim()
 
-    # Right plot: samples from learned model.
-    xs = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
-    xs = torch.vstack((xs[0], xs[8], xs[9]))
-    z1, z2, z3 = np.split(xs, indices_or_sections=3, axis=-1)
-
-    [ax01.plot(z1[:, i, 0], z2[:, i, 0], z3[:, i, 0]) for i in range(num_samples)]
-    ax01.scatter(z1[0, :num_samples, 0], z2[0, :num_samples, 0], z3[0, :10, 0], marker='x')
-    ax01.set_yticklabels([])
-    ax01.set_xticklabels([])
-    ax01.set_zticklabels([])
-    ax01.set_xlabel('$z_1$', labelpad=0., fontsize=16)
-    ax01.set_ylabel('$z_2$', labelpad=.5, fontsize=16)
-    ax01.set_zlabel('$z_3$', labelpad=0., horizontalalignment='center', fontsize=16)
-    ax01.set_title('Samples', fontsize=20)
-    ax01.set_xlim(xlim)
-    ax01.set_ylim(ylim)
-    ax01.set_zlim(zlim)
-
-    plt.savefig(img_path)
-    plt.close()
-
-
-def log_MSE(xs, ts, latent_sde, bm_vis, global_step):
+def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
+    tt = X.shape[1]
+    D = np.ceil(X.shape[2]).astype(int)
+    nrows = np.ceil(D / 3).astype(int)
+    lag = X.shape[1] - Xrec.shape[1]
+    plt.figure(2, figsize=(20, 40))
+    for i in range(D):
+        plt.subplot(nrows, 3, i + 1)
+        plt.plot(range(0, tt), X[idx, :, i], 'r.-')
+        plt.plot(range(lag, tt), Xrec[idx, :, i], 'b.-')
+    plt.savefig(fname)
+    if show is False:
+        plt.close()
+def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
     xs_model = latent_sde.sample(batch_size=xs.size(1), ts=ts, bm=bm_vis).cpu().numpy()
-    print(xs_model.shape, xs.cpu().numpy().shape)
     mse_loss = nn.MSELoss()
     with torch.no_grad():
-        loss = mse_loss(xs, torch.tensor(xs_model))
-    logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},')
+        loss = mse_loss(xs[:, 0, :], torch.tensor(xs_model[:, 0, :]))
+        xs_m_t = np.transpose(xs_model, (1, 0, 2))
+        xs_t = np.transpose(xs, (1, 0, 2))
+        plot_gym_results(xs_t, xs_m_t, 0, False, f'{train_dir}/recon_{global_step:06d}')
+    logging.info(f'current loss: {loss:.4f}, global_step: {global_step:06d},\n')
 
 
 def main(
-        batch_size=128,
+        batch_size=64,
         latent_size=4,
         context_size=64,
         hidden_size=128,
@@ -235,17 +207,17 @@ def main(
         kl_anneal_iters=1000,
         pause_every=50,
         noise_std=0.01,
+        train_batch_size=16,
         adjoint=False,
         train_dir='./dump/lorenz/',
         method="srk",
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     steps = 100
-    xs, ts = get_env_samples('HalfCheetah-v2', 'sac_HalfCheetah', batch_size, steps, device)
-    #xs, ts = make_dataset(t0=t0, t1=t1, batch_size=batch_size, noise_std=noise_std, train_dir=train_dir, device=device)
-    print("state space", xs.shape[-1])
+    train_data, data_dim, action_dim = get_training_data('Hopper-v2', 'sac_hopper', batch_size, steps, device, t0, t1,
+                                                         train_batch_size=train_batch_size, reset_data= True)
     latent_sde = LatentSDE(
-        data_size=xs.shape[-1],
+        data_size=data_dim,
         latent_size=latent_size,
         context_size=context_size,
         hidden_size=hidden_size,
@@ -256,25 +228,29 @@ def main(
 
     # Fix the same Brownian motion for visualization.
     bm_vis = torchsde.BrownianInterval(
-        t0=t0, t1=t1, size=(batch_size, latent_size,), device=device, levy_area_approximation="space-time")
-    log_MSE(xs, ts, latent_sde, bm_vis, 10)
+        t0=t0, t1=t1, size=(train_batch_size, latent_size,), device=device, levy_area_approximation="space-time")
 
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
-        latent_sde.zero_grad()
-        log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method)
-        loss = -log_pxs + log_ratio * kl_scheduler.val
-        loss.backward()
-        optimizer.step()
-        scheduler.step()
-        kl_scheduler.step()
+        for i, batch in enumerate(train_data):
+            xs, ts, actions = batch
+            xs, actions, ts = torch.permute(xs, (1, 0, 2)), torch.permute(actions, (1, 0, 2)), ts[0]
+            latent_sde.zero_grad()
+            if i == 0:
+                log_MSE(xs, ts, latent_sde, bm_vis, 10, train_dir)
+            log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method)
+            loss = -log_pxs + log_ratio * kl_scheduler.val
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
+            kl_scheduler.step()
 
-        if global_step % pause_every == 0:
-            lr_now = optimizer.param_groups[0]['lr']
-            logging.info(
-                f'global_step: {global_step:06d}, lr: {lr_now:.5f}, '
-                f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f}'
-            )
-            log_MSE(xs,ts,latent_sde,bm_vis, global_step)
+            if global_step % pause_every == 0:
+                lr_now = optimizer.param_groups[0]['lr']
+                logging.info(
+                    f'global_step: {global_step:06d}, lr: {lr_now:.5f}, '
+                    f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f}'
+                )
+                log_MSE(xs,ts,latent_sde,bm_vis, global_step, train_dir)
 
 
 if __name__ == "__main__":
