@@ -183,7 +183,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 if __name__ == "__main__":
-    data_buffer, ts, actions = get_encoded_env_samples('Hopper-v2', 'sac_hopper', 16, 300, device)
+    data_buffer, ts, actions = get_encoded_env_samples('Hopper-v2', 'sac_hopper', 16, 300, device, reset_data=False)
 
     for i in range(10):
         plot_gym_results(data_buffer, None, i, True, "hopper-data")

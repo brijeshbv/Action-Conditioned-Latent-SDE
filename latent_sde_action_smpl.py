@@ -33,7 +33,7 @@ import tqdm
 from torch import nn
 from torch import optim
 from torch.distributions import Normal
-from envs.gym_utils import get_encoded_env_samples, get_training_data, get_obs_from_initial_state
+from envs.gym_utils import get_training_data, get_obs_from_initial_state
 import torchsde
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
@@ -163,10 +163,7 @@ class LatentSDE(nn.Module):
             if i == 0:
                 latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[0, :, :]), dim=1)
             elif i < ts.shape[0] - 1:
-                latent_and_data = torch.cat((zs[-1, :, :], actions[i, :, :], xs[i, :, :]), dim=1)
-            else:
-                latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), xs[-1, :, :]),
-                                            dim=1)
+                latent_and_data = torch.cat((zs[-1, :, :], actions[i-1, :, :], xs[i-1, :, :]), dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
             t_horizon = ts_horizon[0][i: i + self.skip_every]
             if adjoint:
@@ -174,7 +171,7 @@ class LatentSDE(nn.Module):
                 adjoint_params = (
                         (ctx,) +
                         tuple(self.f_net.parameters()) + tuple(self.g_nets.parameters()) + tuple(
-                    self.h_net.parameters()) + tuple(self.action_encode_net.parameters()))
+                    self.h_net.parameters()))
                 z_pred, log_ratio = torchsde.sdeint_adjoint(
                     self, z_encoded, t_horizon, adjoint_params=adjoint_params, dt=self.dt, logqp=True, method=method,
                     adjoint_method='adjoint_reversible_heun')
@@ -184,11 +181,12 @@ class LatentSDE(nn.Module):
             if i == 0:
                 predicted_xs = xs_mean
                 predicted_noise = xs_n.exp()
+                zs = z_pred
             else:
                 # xs_ = xs_.reshape(1, xs_.shape[0], xs_.shape[1])
                 predicted_xs = torch.cat((predicted_xs, xs_mean), dim=0)
                 predicted_noise = torch.cat((predicted_noise, xs_n.exp()), dim=0)
-            zs = torch.cat((zs, z_pred), dim=0)
+                zs = torch.cat((zs, z_pred), dim=0)
             if i == 0:
                 cum_log_ratio = log_ratio
             else:
@@ -263,7 +261,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=128,
+        batch_size=64,
         latent_size=8,
         context_size=64,
         hidden_size=128,
@@ -284,8 +282,8 @@ def main(
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    steps = 300
-    dt = (t1 - t0) / 100
+    steps = 100
+    dt = 1e-2
     train_data, data_dim, action_dim = get_training_data('Hopper-v2', 'sac_hopper', batch_size, steps, device, t0, t1,
                                                          train_batch_size=train_batch_size)
 
@@ -301,7 +299,7 @@ def main(
         dt=dt,
     ).to(device)
     optimizer = optim.Adam(params=latent_sde.parameters(), lr=lr_init)
-    #  scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=lr_gamma)
     kl_scheduler = LinearScheduler(iters=kl_anneal_iters)
 
     for global_step in tqdm.tqdm(range(1, num_iters + 1)):
@@ -319,7 +317,7 @@ def main(
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(parameters=latent_sde.parameters(), max_norm=10, norm_type=2.0)
             optimizer.step()
-            # scheduler.step()
+            scheduler.step()
             kl_scheduler.step()
 
             if global_step % pause_every == 0 or global_step == 1:

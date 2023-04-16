@@ -26,7 +26,6 @@ import logging
 import os
 
 import fire
-import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -34,7 +33,7 @@ import tqdm
 from torch import nn
 from torch import optim
 from torch.distributions import Normal
-from envs.gym_utils import get_env_samples, get_training_data
+from envs.gym_utils import get_training_data
 import torchsde
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -195,11 +194,11 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir):
 
 
 def main(
-        batch_size=64,
-        latent_size=4,
+        batch_size=16,
+        latent_size=6,
         context_size=64,
         hidden_size=128,
-        lr_init=1e-2,
+        lr_init=1e-3,
         t0=0.,
         t1=2.,
         lr_gamma=0.997,
@@ -213,7 +212,8 @@ def main(
         method="srk",
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    steps = 100
+    logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
+    steps = 150
     train_data, data_dim, action_dim = get_training_data('Hopper-v2', 'sac_hopper', batch_size, steps, device, t0, t1,
                                                          train_batch_size=train_batch_size, reset_data= True)
     latent_sde = LatentSDE(
@@ -235,7 +235,7 @@ def main(
             xs, ts, actions = batch
             xs, actions, ts = torch.permute(xs, (1, 0, 2)), torch.permute(actions, (1, 0, 2)), ts[0]
             latent_sde.zero_grad()
-            if i == 0:
+            if global_step == 1:
                 log_MSE(xs, ts, latent_sde, bm_vis, 10, train_dir)
             log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method)
             loss = -log_pxs + log_ratio * kl_scheduler.val
