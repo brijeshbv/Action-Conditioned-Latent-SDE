@@ -48,15 +48,29 @@ def load_mocap_data_many_walks(data_dir, t0=0.0, t1=2.0, dt=0.1, plot=True):
     Ytr = np.tile(Ytr, [Xtr.shape[0], 1])
     Xtr = np.transpose(Xtr, (1, 0, 2))
     Xtest = np.transpose(Xtest, (1, 0, 2))
-    Xtr = Xtr[:50,:,:]
+    Xtr = Xtr[:50, :, :]
     Xtest = Xtest[:50, :, :]
     ts = torch.linspace(t0, t1, steps=Xtr.shape[0])
     return torch.tensor(Xtr, dtype=torch.float32), torch.tensor(Xtest, dtype=torch.float32), ts
 
 
+def plot_cmu_mocap_recs(X, Xrec, idx=0, show=False, fname='data_mocap.png'):
+    tt = X.shape[1]
+    D = X.shape[2]
+    nrows = np.ceil(D / 5).astype(int)
+
+    plt.figure(2, figsize=(20, 40))
+    for i in range(D):
+        plt.subplot(nrows, 5, i + 1)
+        plt.plot(range(0, tt), X[idx, :, i], 'r-.')
+    plt.savefig(fname)
+    if show is False:
+        plt.close()
+
 if __name__ == "__main__":
     dt = 0.01
-    xs, xs_test, ts = load_mocap_data_many_walks('../', t0=0.3, t1=2, dt=0.005)
-
+    xs, xs_test, ts = load_mocap_data_many_walks('./reference/',0.3, 30., dt)
+    for i in range(10):
+        plot_cmu_mocap_recs(xs, None, i, True)
     num_steps = (ts - ts[0]) / dt
     print(xs.shape, xs_test.shape, ts.shape)

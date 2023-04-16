@@ -36,7 +36,9 @@ def get_obs_from_initial_state(x0, batch_size, steps):
         else:
             buffer = np.append(buffer, [observations], axis=0)
             action_buffer = np.append(action_buffer, [actions], axis=0)
-
+    data_mean = buffer.mean(axis=1)
+    for i in range(buffer.shape[1]):
+        buffer[:, i, :] = buffer[:, i, :] - data_mean
     buffer = np.transpose(buffer, (1, 0, 2))
     action_buffer = np.transpose(action_buffer, (1, 0, 2))
     return torch.tensor(buffer, dtype=torch.float32), torch.tensor(action_buffer, dtype=torch.float32)
@@ -104,9 +106,8 @@ def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t
     model = SAC.load(f'envs/trained_envs/{model_file}', device=device)
     data_buffer = np.array([], dtype=np.float32)
     action_buffer = np.array([], dtype=np.float32)
-
+    obs = compt_reset(env)
     for i in range(batch_size):
-        obs = compt_reset(env)
         observations = np.array([obs], dtype=np.float32)
         actions = np.array([], dtype=np.float32)
         for j in range(steps - 1):
@@ -125,9 +126,9 @@ def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t
             action_buffer = np.append(action_buffer, [actions], axis=0)
     ts = torch.linspace(t0, t1, steps=steps, device=device)
     ts = ts.repeat(data_buffer.shape[0], 1)
-    data_mean = data_buffer.mean(axis=0)
-    for i in range(data_buffer.shape[0]):
-        data_buffer[i] = data_buffer[i] - data_mean
+    data_mean = data_buffer.mean(axis=1)
+    for i in range(data_buffer.shape[1]):
+        data_buffer[:,i,:] = data_buffer[:,i,:] - data_mean
     print(data_buffer.shape)
     return torch.tensor(data_buffer, dtype=torch.float32), ts, torch.tensor(action_buffer, dtype=torch.float32)
 
@@ -164,13 +165,22 @@ def get_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2.):
     print(data_buffer.shape)
     return torch.tensor(data_buffer, dtype=torch.float32), ts
 
+def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
+    tt = X.shape[1]
+    D = np.ceil(X.shape[2]).astype(int)
+    nrows = np.ceil(D / 3).astype(int)
+    plt.figure(2, figsize=(20, 40))
+    for i in range(D):
+        plt.subplot(nrows, 3, i + 1)
+        plt.plot(range(0, tt), X[idx, :, i], 'r.-')
+        # plt.plot(range(0, tt), Xrec[idx, :, i], 'b.-')
+    plt.savefig(fname)
+    if show is False:
+        plt.close()
 
 if __name__ == "__main__":
-    data_buffer, ts, actions = get_encoded_env_samples('Hopper-v2', 'sac_hopper', 2, 500, device)
-    actions = np.transpose(actions, (1, 0, 2))
-    plot_action_results(actions, 0, False, "action-plt")
-    data_buffer = np.transpose(data_buffer, (1, 0, 2))
-    render_mujoco(data_buffer[1])
-    print(data_buffer.shape)
+    data_buffer, ts, actions = get_encoded_env_samples('Hopper-v2', 'sac_hopper', 16, 50, device)
 
-    img_path = os.path.join("./test/", f'test.pdf')
+    for i in range(10):
+        plot_gym_results(data_buffer, None, i, True, "hopper-data")
+
