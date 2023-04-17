@@ -18,7 +18,7 @@ def get_obs_from_initial_state(x0, batch_size, steps):
     buffer = np.array([], dtype=np.float32)
     action_buffer = np.array([], dtype=np.float32)
     for i in range(batch_size):
-        env.set_internal_state(x0[i].detach().numpy())
+        env.set_internal_state(x0[i].cpu().detach().numpy())
         obs = env.get_obs()
         observations = np.array([obs], dtype=np.float32)
         actions = np.array([], dtype=np.float32)
@@ -41,7 +41,7 @@ def get_obs_from_initial_state(x0, batch_size, steps):
         buffer[:, i, :] = buffer[:, i, :] - data_mean
     buffer = np.transpose(buffer, (1, 0, 2))
     action_buffer = np.transpose(action_buffer, (1, 0, 2))
-    return torch.tensor(buffer, dtype=torch.float32), torch.tensor(action_buffer, dtype=torch.float32)
+    return torch.tensor(buffer, dtype=torch.float32).to(device), torch.tensor(action_buffer, dtype=torch.float32).to(device)
 
 
 def vis(xs, ts, img_path, num_samples=10):
@@ -127,12 +127,12 @@ def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t
             data_buffer = np.append(data_buffer, [observations], axis=0)
             action_buffer = np.append(action_buffer, [actions], axis=0)
     ts = torch.linspace(t0, t1, steps=steps, device=device)
-    ts = ts.repeat(data_buffer.shape[0], 1)
+    ts = ts.repeat(data_buffer.shape[0], 1).to(device)
     data_mean = data_buffer.mean(axis=1)
     for i in range(data_buffer.shape[1]):
         data_buffer[:, i, :] = data_buffer[:, i, :] - data_mean
     print(data_buffer.shape)
-    return torch.tensor(data_buffer, dtype=torch.float32), ts, torch.tensor(action_buffer, dtype=torch.float32)
+    return torch.tensor(data_buffer, dtype=torch.float32).to(device), ts, torch.tensor(action_buffer, dtype=torch.float32).to(device)
 
 
 def get_training_data(env, model_file, batch_size, steps, device, t0=0., t1=2., train_batch_size=8, reset_data=True):
