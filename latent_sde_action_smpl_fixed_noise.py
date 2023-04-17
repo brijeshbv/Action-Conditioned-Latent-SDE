@@ -239,7 +239,7 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps):
     xs_model = latent_sde.sample_fromx0(x0=x0, ts=ts, bm=bm_vis, actions=actions, zs=z0)
     mse_loss = nn.MSELoss()
     with torch.no_grad():
-        loss = mse_loss(xs[:, 0, :], torch.tensor(xs_model[:, 0, :]))
+        loss = mse_loss(xs[:, 0, :], xs_model[:, 0, :])
         xs_m_t = torch.transpose(xs_model, 1, 0)
         xs_t = torch.transpose(xs, 1, 0)
         plot_gym_results(xs_t.cpu().numpy(), xs_m_t.cpu().numpy(), 0, False, f'{train_dir}/recon_{global_step:06d}')
@@ -262,7 +262,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=256,
+        batch_size=32,
         latent_size=8,
         context_size=64,
         hidden_size=128,
