@@ -84,14 +84,14 @@ class LatentSDE(nn.Module):
         # Decoder.
         self.f_net = nn.Sequential(
             nn.Linear(latent_size + context_size, hidden_size),
-            nn.Softplus(),
+            nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, latent_size),
         )
         self.h_net = nn.Sequential(
             nn.Linear(latent_size, hidden_size),
-            nn.Softplus(),
+            nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, latent_size),
@@ -102,7 +102,7 @@ class LatentSDE(nn.Module):
             [
                 nn.Sequential(
                     nn.Linear(1, hidden_size),
-                    nn.Tanh(),
+                    nn.ReLU(),
                     nn.Linear(hidden_size, 1),
                 )
                 for _ in range(latent_size)
@@ -262,7 +262,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=32,
+        batch_size=256,
         latent_size=8,
         context_size=64,
         hidden_size=128,
@@ -277,9 +277,9 @@ def main(
         skip_every=2,
         dt=1e-2,
         train_batch_size=16,
-        adjoint=True,
+        adjoint=False,
         train_dir='./dump/lorenz/',
-        method="reversible_heun",
+        method="srk",
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('runnings on', device)
