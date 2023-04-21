@@ -230,12 +230,12 @@ class LatentSDE(nn.Module):
         return predicted_xs
 
 
-def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps):
+def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps, actions):
     eps = torch.randn(size=(xs.size(1), *latent_sde.pz0_mean.shape[1:]), device=latent_sde.pz0_mean.device)
     z0 = latent_sde.pz0_mean + latent_sde.pz0_logstd.exp() * eps
     z0 = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
     x0 = latent_sde.projector(z0[-1, :, :])
-    xs, actions = get_obs_from_initial_state(x0, xs.size(1), steps=steps)
+    #xs, actions = get_obs_from_initial_state(x0, xs.size(1), steps=steps)
     xs_model = latent_sde.sample_fromx0(x0=x0, ts=ts, bm=bm_vis, actions=actions, zs=z0)
     mse_loss = nn.MSELoss()
     with torch.no_grad():
@@ -262,7 +262,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 
 def main(
-        batch_size=1024,
+        batch_size=16,
         latent_size=8,
         context_size=64,
         hidden_size=128,
@@ -276,7 +276,7 @@ def main(
         noise_std=0.01,
         skip_every=2,
         dt=1e-2,
-        train_batch_size=32,
+        train_batch_size=8,
         adjoint=False,
         train_dir='./dump/lorenz/',
         method="srk",
@@ -284,8 +284,8 @@ def main(
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('runnings on', device)
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    steps = 20
-    train_data, data_dim, action_dim = get_training_data('Hopper-v2', 'sac_hopper', batch_size, steps, device, t0, t1,
+    steps = 50
+    train_data, data_dim, action_dim = get_training_data(batch_size, steps, device, t0, t1,
                                                          train_batch_size=train_batch_size)
 
     latent_sde = LatentSDE(
@@ -311,7 +311,7 @@ def main(
             bm_vis = torchsde.BrownianInterval(
                 t0=t0, t1=t1, size=(xs.shape[1], latent_size), device=device, levy_area_approximation="space-time")
             if global_step == 1:
-                log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps)
+                log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps, actions)
             latent_sde.zero_grad()
             log_pxs, log_ratio = latent_sde(xs, ts, noise_std, adjoint, method, actions)
             loss = -log_pxs + log_ratio * kl_scheduler.val
@@ -327,7 +327,7 @@ def main(
                     f'global_step: {global_step:06d}, lr: {lr_now:.5f}, '
                     f'log_pxs: {log_pxs:.4f}, log_ratio: {log_ratio:.4f} loss: {loss:.4f}, kl_coeff: {kl_scheduler.val:.4f}\n'
                 )
-                log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps)
+                log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps, actions)
 
 
 if __name__ == "__main__":
