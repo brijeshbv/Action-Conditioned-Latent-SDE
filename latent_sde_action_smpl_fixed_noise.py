@@ -235,7 +235,7 @@ def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps, actions):
     z0 = latent_sde.pz0_mean + latent_sde.pz0_logstd.exp() * eps
     z0 = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
     x0 = latent_sde.projector(z0[-1, :, :])
-    #xs, actions = get_obs_from_initial_state(x0, xs.size(1), steps=steps)
+    xs, actions = get_obs_from_initial_state(x0, xs.size(1), steps=steps)
     xs_model = latent_sde.sample_fromx0(x0=x0, ts=ts, bm=bm_vis, actions=actions, zs=z0)
     mse_loss = nn.MSELoss()
     with torch.no_grad():

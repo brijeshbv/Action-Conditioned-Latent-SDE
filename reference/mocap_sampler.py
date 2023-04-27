@@ -73,4 +73,3 @@ if __name__ == "__main__":
     for i in range(10):
         plot_cmu_mocap_recs(xs, None, i, True)
     num_steps = (ts - ts[0]) / dt
-    print(xs.shape, xs_test.shape, ts.shape)

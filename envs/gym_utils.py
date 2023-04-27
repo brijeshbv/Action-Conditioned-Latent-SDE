@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import gym
 from envs.pseudo_gym import PseudoGym
 from torch.utils.data import TensorDataset, DataLoader
-from rl_zoo3.enjoy import get_encoded_env_samples, get_trained_model
+#from rl_zoo3.enjoy import get_encoded_env_samples, get_trained_model
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -77,42 +77,41 @@ def compt_step(env, action):
         return obs, reward, done, info
 
 
-# def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2., reset_data=True):
-#     env = gym.make(env)
-#     model = SAC.load(f'envs/trained_envs/{model_file}', device=device)
-#     data_buffer = np.array([], dtype=np.float32)
-#     action_buffer = np.array([], dtype=np.float32)
-#     obs = compt_reset(env)
-#     for i in range(batch_size):
-#         if reset_data:
-#             obs = compt_reset(env)
-#         observations = np.array([obs], dtype=np.float32)
-#         actions = np.array([], dtype=np.float32)
-#         for j in range(steps - 1):
-#             action, _states = model.predict(obs, deterministic=True)
-#             obs, reward, done, info = compt_step(env, action)
-#             observations = np.vstack((observations, obs))
-#             if j == 0:
-#                 actions = np.array([action], dtype=np.float32)
-#             else:
-#                 actions = np.vstack((actions, action))
-#         if i == 0:
-#             data_buffer = np.array([observations])
-#             action_buffer = np.array([actions])
-#         else:
-#             data_buffer = np.append(data_buffer, [observations], axis=0)
-#             action_buffer = np.append(action_buffer, [actions], axis=0)
-#     ts = torch.linspace(t0, t1, steps=steps, device=device)
-#     ts = ts.repeat(data_buffer.shape[0], 1).to(device)
-#     data_mean = data_buffer.mean(axis=1)
-#     for i in range(data_buffer.shape[1]):
-#         data_buffer[:, i, :] = data_buffer[:, i, :] - data_mean
-#     print(data_buffer.shape)
-#     return torch.tensor(data_buffer, dtype=torch.float32).to(device), ts, torch.tensor(action_buffer, dtype=torch.float32).to(device)
+def get_encoded_env_samples(env, model_file, batch_size, steps, device, t0=0., t1=2., reset_data=True):
+    env = gym.make(env)
+    model = SAC.load(f'envs/trained_envs/{model_file}', device=device)
+    data_buffer = np.array([], dtype=np.float32)
+    action_buffer = np.array([], dtype=np.float32)
+    obs = compt_reset(env)
+    for i in range(batch_size):
+        if reset_data:
+            obs = compt_reset(env)
+        observations = np.array([obs], dtype=np.float32)
+        actions = np.array([], dtype=np.float32)
+        for j in range(steps - 1):
+            action, _states = model.predict(obs, deterministic=True)
+            obs, reward, done, info = compt_step(env, action)
+            observations = np.vstack((observations, obs))
+            if j == 0:
+                actions = np.array([action], dtype=np.float32)
+            else:
+                actions = np.vstack((actions, action))
+        if i == 0:
+            data_buffer = np.array([observations])
+            action_buffer = np.array([actions])
+        else:
+            data_buffer = np.append(data_buffer, [observations], axis=0)
+            action_buffer = np.append(action_buffer, [actions], axis=0)
+    ts = torch.linspace(t0, t1, steps=steps, device=device)
+    ts = ts.repeat(data_buffer.shape[0], 1).to(device)
+    data_mean = data_buffer.mean(axis=1)
+    for i in range(data_buffer.shape[1]):
+        data_buffer[:, i, :] = data_buffer[:, i, :] - data_mean
+    return torch.tensor(data_buffer, dtype=torch.float32).to(device), ts, torch.tensor(action_buffer, dtype=torch.float32).to(device)
 
 
 def get_training_data(batch_size, steps, device, t0=0., t1=2., train_batch_size=8, reset_data=True):
-    xs, ts, a = get_encoded_env_samples( batch_size, steps, device, t0, t1, reset_data)
+    xs, ts, a = get_encoded_env_samples("Hopper-v2","sac_hopper.zip", batch_size, steps, device, t0, t1, reset_data)
     train_dataset = TensorDataset(xs, ts, a)
     data_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True, num_workers=0)
     return data_loader, xs.shape[-1], a.shape[-1]
