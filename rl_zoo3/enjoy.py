@@ -21,7 +21,7 @@ def get_encoded_env_samples(batch_size, steps, device, t0=0., t1=2.,reset_data =
     verbose = 2
     no_render = True
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", help="environment ID", type=EnvironmentName, default="Acrobot-v1")
+    parser.add_argument("--env", help="environment ID", type=EnvironmentName, default="Hopper-v3")
     parser.add_argument("-f", "--folder", help="Log folder", type=str, default="rl-trained-agents")
     parser.add_argument("--algo", help="RL Algorithm", default="ppo", type=str, required=False,
                         choices=list(ALGOS.keys()))
@@ -228,7 +228,7 @@ def get_encoded_env_samples(batch_size, steps, device, t0=0., t1=2.,reset_data =
             obs, reward, done, info = env.step(action)
             observations = np.vstack((observations, obs))
             if j == 0:
-                actions = np.array([action], dtype=np.float32)
+                actions = np.array(action, dtype=np.float32)
             else:
                 actions = np.vstack((actions, action))
         if i == 0:
@@ -252,7 +252,7 @@ def get_trained_model():
     verbose = 2
     no_render = True
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", help="environment ID", type=EnvironmentName, default="Acrobot-v1")
+    parser.add_argument("--env", help="environment ID", type=EnvironmentName, default="Hopper-v3")
     parser.add_argument("-f", "--folder", help="Log folder", type=str, default="rl-trained-agents")
     parser.add_argument("--algo", help="RL Algorithm", default="ppo", type=str, required=False,
                         choices=list(ALGOS.keys()))

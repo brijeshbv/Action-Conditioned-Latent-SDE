@@ -67,7 +67,7 @@ class Encoder(nn.Module):
 
 
 class LatentSDE(nn.Module):
-    sde_type = "ito"
+    sde_type = "stratonovich"
     noise_type = "diagonal"
 
     def __init__(self, data_size, latent_size, context_size, hidden_size, action_dim, t0=0,
@@ -216,7 +216,7 @@ class LatentSDE(nn.Module):
                 latent_and_data = torch.cat((zs[-1, :, :], torch.zeros_like(actions[0]), predicted_xs[-1, :, :]),
                                             dim=1)
             z_encoded = self.action_encode_net(latent_and_data)
-            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm, method="srk")
+            z_pred = torchsde.sdeint(self, z_encoded, t_horizon, dt=self.dt, names={'drift': 'h'}, bm=bm, method="reversible_heun")
             # Most of the time in ML, we don't sample the observation noise for visualization purposes.
 
             xs_hat = self.projector(z_pred)
@@ -263,7 +263,7 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
 
 def main(
         batch_size=16,
-        latent_size=8,
+        latent_size=11,
         context_size=64,
         hidden_size=128,
         lr_init=1e-3,
@@ -275,16 +275,16 @@ def main(
         pause_every=50,
         noise_std=0.01,
         skip_every=2,
-        dt=1e-2,
-        train_batch_size=8,
-        adjoint=False,
+        dt=0.5e-2,
+        train_batch_size=16,
+        adjoint=True,
         train_dir='./dump/lorenz/',
-        method="srk",
+        method="reversible_heun",
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('runnings on', device)
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    steps = 50
+    steps = 100
     train_data, data_dim, action_dim = get_training_data(batch_size, steps, device, t0, t1,
                                                          train_batch_size=train_batch_size)
 
