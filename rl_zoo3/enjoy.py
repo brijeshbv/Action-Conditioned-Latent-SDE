@@ -16,8 +16,10 @@ from rl_zoo3 import ALGOS, create_test_env, get_saved_hyperparams
 from rl_zoo3.exp_manager import ExperimentManager
 from rl_zoo3.load_from_hub import download_from_hub
 from rl_zoo3.utils import StoreDict, get_model_path
-def get_encoded_env_samples(batch_size, steps, device, t0=0., t1=2.,reset_data = False,):
-    #--algo ppo   -f ../logs/ --verbose 2 --no-render
+
+
+def get_encoded_env_samples(batch_size, steps, device, t0=0., t1=2., reset_data=False, ):
+    # --algo ppo   -f ../logs/ --verbose 2 --no-render
     verbose = 2
     no_render = True
     parser = argparse.ArgumentParser()
@@ -96,7 +98,6 @@ def get_encoded_env_samples(batch_size, steps, device, t0=0., t1=2.,reset_data =
     # algo = args.algo
     folder = './logs/'
     algo = 'ppo'
-
 
     try:
         _, model_path, log_path = get_model_path(
@@ -237,18 +238,25 @@ def get_encoded_env_samples(batch_size, steps, device, t0=0., t1=2.,reset_data =
         else:
             data_buffer = np.append(data_buffer, [observations], axis=0)
             action_buffer = np.append(action_buffer, [actions], axis=0)
-    ts = torch.linspace(t0, t1, steps=steps, device=device)
+    x, y, z = data_buffer.shape
+    l, m, n = action_buffer.shape
+    # reshaping to create different x0 for training
+    data_buffer = data_buffer.reshape(((x * 2), (y // 2), z))
+    action_buffer1 = action_buffer[:, :(m // 2), :]
+    action_buffer2 = action_buffer[:, (m // 2)+1:, :]
+    action_buffer = np.concatenate((action_buffer1, action_buffer2), axis=0)
+    ts = torch.linspace(t0, t1, steps=steps//2, device=device)
     ts = ts.repeat(data_buffer.shape[0], 1).to(device)
     data_mean = data_buffer.mean(axis=1)
     for i in range(data_buffer.shape[1]):
         data_buffer[:, i, :] = data_buffer[:, i, :] - data_mean
     print(data_buffer.shape)
-    return torch.tensor(data_buffer, dtype=torch.float32).to(device), ts, torch.tensor(action_buffer, dtype=torch.float32).to(device)
-
+    return torch.tensor(data_buffer, dtype=torch.float32).to(device), ts, torch.tensor(action_buffer,
+                                                                                       dtype=torch.float32).to(device)
 
 
 def get_trained_model():
-    #--algo ppo   -f ../logs/ --verbose 2 --no-render
+    # --algo ppo   -f ../logs/ --verbose 2 --no-render
     verbose = 2
     no_render = True
     parser = argparse.ArgumentParser()
@@ -390,8 +398,6 @@ def get_trained_model():
             "lr_schedule": lambda _: 0.0,
             "clip_range": lambda _: 0.0,
         }
-
-
 
     model = ALGOS[algo].load(model_path, custom_objects=custom_objects, device=args.device, **kwargs)
 

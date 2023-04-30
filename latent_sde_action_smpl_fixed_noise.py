@@ -276,7 +276,7 @@ def main(
         noise_std=0.01,
         skip_every=2,
         dt=0.5e-2,
-        train_batch_size=16,
+        train_batch_size=8,
         adjoint=True,
         train_dir='./dump/lorenz/',
         method="reversible_heun",
@@ -284,7 +284,7 @@ def main(
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('runnings on', device)
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    steps = 100
+    steps = 50
     train_data, data_dim, action_dim = get_training_data(batch_size, steps, device, t0, t1,
                                                          train_batch_size=train_batch_size)
 

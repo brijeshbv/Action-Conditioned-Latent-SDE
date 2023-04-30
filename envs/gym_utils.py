@@ -112,6 +112,7 @@ def compt_step(env, action):
 
 
 def get_training_data(batch_size, steps, device, t0=0., t1=2., train_batch_size=8, reset_data=True):
+    steps = steps * 2
     xs, ts, a = get_encoded_env_samples( batch_size, steps, device, t0, t1, reset_data)
     train_dataset = TensorDataset(xs, ts, a)
     data_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True, num_workers=0)
