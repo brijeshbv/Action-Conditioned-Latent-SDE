@@ -25,8 +25,8 @@ python -m examples.latent_sde_lorenz
 import logging
 import os
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import fire
 import matplotlib.pyplot as plt
@@ -57,12 +57,16 @@ class LinearScheduler(object):
 class Encoder(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Encoder, self).__init__()
-        self.gru = nn.GRU(input_size=input_size, hidden_size=hidden_size)
-        self.lin = nn.Linear(hidden_size, output_size)
+        self.lin = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.Tanh(),
+            nn.Linear(hidden_size, output_size),
+        )
 
     def forward(self, inp):
-        out, _ = self.gru(inp)
-        out = self.lin(out)
+        out = self.lin(inp)
         return out
 
 
@@ -146,12 +150,11 @@ class LatentSDE(nn.Module):
 
     def forward(self, xs, ts, noise_std, adjoint=False, method="reversible_heun", actions=None):
         # Contextualization is only needed for posterior inference.
-        ctx = self.encoder(torch.flip(xs, dims=(0,)))
-        ctx = torch.flip(ctx, dims=(0,))
+        ctx = self.encoder(xs[0])
         ts_horizon = ts.permute((1, 0))
         self.contextualize((ctx, ts_horizon[0]))
         sampled_t = list(t for t in range(ts.shape[0] - 1) if t % self.skip_every == 0)
-        qz0_mean, qz0_logstd = self.qz0_net(ctx[0]).chunk(chunks=2, dim=1)
+        qz0_mean, qz0_logstd = self.qz0_net(ctx).chunk(chunks=2, dim=1)
         z0 = qz0_mean + qz0_logstd.exp() * torch.randn_like(qz0_mean)
         zs = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
 
@@ -232,7 +235,8 @@ class LatentSDE(nn.Module):
 
 def log_MSE(xs, ts, latent_sde, bm_vis, global_step, train_dir, steps, actions):
     eps = torch.randn(size=(xs.size(1), *latent_sde.pz0_mean.shape[1:]), device=latent_sde.pz0_mean.device)
-    z0 = latent_sde.pz0_mean + latent_sde.pz0_logstd.exp() * eps
+    z0_mean, z0_sigma = latent_sde.qz0_net(latent_sde.encoder(xs[0]))
+    z0 = z0_mean + eps * z0_sigma
     z0 = torch.reshape(z0, (1, z0.shape[0], z0.shape[1]))
     x0 = latent_sde.projector(z0[-1, :, :])
     #xs, actions = get_obs_from_initial_state(x0, xs.size(1), steps=steps)
@@ -251,18 +255,19 @@ def plot_gym_results(X, Xrec, idx=0, show=False, fname='reconstructions.png'):
     D = np.ceil(X.shape[2]).astype(int)
     nrows = np.ceil(D / 3).astype(int)
     lag = X.shape[1] - Xrec.shape[1]
-    plt.figure(2, figsize=(20, 40))
-    for i in range(D):
-        plt.subplot(nrows, 3, i + 1)
-        plt.plot(range(0, tt), X[idx, :, i], 'r.-')
-        plt.plot(range(lag, tt), Xrec[idx, :, i], 'b.-')
-    plt.savefig(fname)
-    if show is False:
-        plt.close()
+    for idx in range(5):
+        plt.figure(2, figsize=(20, 40))
+        for i in range(D):
+            plt.subplot(nrows, 3, i + 1)
+            plt.plot(range(0, tt), X[idx, :, i], 'r.-')
+            plt.plot(range(lag, tt), Xrec[idx, :, i], 'b.-')
+        plt.savefig(f'{fname}-{idx}')
+        if show is False:
+            plt.close()
 
 
 def main(
-        batch_size=16,
+        batch_size=8,
         latent_size=11,
         context_size=64,
         hidden_size=128,
@@ -276,7 +281,7 @@ def main(
         noise_std=0.01,
         skip_every=2,
         dt=0.5e-2,
-        train_batch_size=8,
+        train_batch_size=16,
         adjoint=True,
         train_dir='./dump/lorenz/',
         method="reversible_heun",
@@ -284,7 +289,7 @@ def main(
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('runnings on', device)
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"), filename=f'{train_dir}/log.txt')
-    steps = 50
+    steps = 100
     train_data, data_dim, action_dim = get_training_data(batch_size, steps, device, t0, t1,
                                                          train_batch_size=train_batch_size)
 
